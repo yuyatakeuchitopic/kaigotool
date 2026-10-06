@@ -4,11 +4,14 @@
 
 ## 推奨構成
 
-**Python + Playwright（Edge）+ Gmail API** で Step1・Step2 とも実装する。
+**Python + Playwright（Edge）+ Gmail（IMAP・アプリ パスワード）** で Step1・Step2 とも実装する。
+
+> Gmail API は OAuth クライアント作成が必要で、テスト公開状態だと認証が 7 日で切れ毎月再認証になるため、
+> 設定が簡単な IMAP（Gmail 独自の X-GM-RAW 拡張で Gmail と同じ検索構文が使える）を採用した。
 
 | 観点 | Python + Playwright | Power Automate Desktop |
 | --- | --- | --- |
-| Gmail 検索（件名・期間指定） | Gmail API で `subject:` `after:` `before:` 検索が確実 | Gmail 連携はクラウドフロー側。デスクトップ単体ではブラウザ操作で検索することになり不安定 |
+| Gmail 検索（件名・期間指定） | Gmail の検索構文（`subject:` `after:` `before:`）で検索が確実 | Gmail 連携はクラウドフロー側。デスクトップ単体ではブラウザ操作で検索することになり不安定 |
 | ページを PDF 保存 | `page.pdf()` で 1 行 | 印刷ダイアログの UI 操作が必要で壊れやすい |
 | ダウンロード＋リネーム | `expect_download()` で保存先・ファイル名を直接指定 | 可能だがダウンロードフォルダ監視が必要 |
 | PDF から日付・金額を読む | pdfplumber＋正規表現 | 「PDF からテキストを抽出」＋正規表現で可能 |
@@ -21,23 +24,25 @@ Edge で動かすため `channel="msedge"` を指定する（Edge 本体をそ�
 
 ```
 kaigotool/
-  main.py              # 起動：対象年月・対象業者の選択 → Step1 → Step2
-  config.example.toml  # 個人情報・口座情報のひな形（実ファイル config.toml は git 管理外）
+  step1.py             # Step1 起動スクリプト
+  config.example.toml  # 設定ひな形（実ファイル config.toml は git 管理外）
   kaigo/
-    gmail_client.py    # Gmail API 認証・メール検索・本文取得
-    homecare.py        # フランスベッド：領収書URL → PDF保存
-    magokoro.py        # まごころ：注文番号抽出 → 納品書DL → リネーム
-    receipt_parser.py  # PDF から日付・金額抽出（Step2 用）
-    benefit_form.py    # ベネフィット・ステーション申請フォーム入力
+    mail.py            # Gmail IMAP 検索・本文取得
+    extract.py         # 本文から URL・注文番号を抽出
+    web.py             # ホームケア PDF 保存 / まごころ納品書 DL（Playwright）
+    receipts.py        # 領収書の日付・金額読み取り（Step2 用）
+    step1.py           # Step1 の処理本体（ファイル命名・receipts.json 出力）
+    ui.py              # 対象年月・業者の選択ダイアログ
+    vendors.py         # 業者ごとの件名・ファイル名定義
 ```
 
 ## Step1：メールから領収書取得
 
-1. **対象年月の選択**：起動時に tkinter の小さなダイアログ（年月プルダウン＋業者チェックボックス 2 つ）。既定値は前月。CLI 引数 `--month 202509 --vendor homecare,magokoro` でも指定可能にする。
+1. **対象年月の選択**：起動時に tkinter の小さなダイアログ（年月プルダウン＋業者チェックボックス 2 つ）。既定値は前月。CLI 引数 `--month 202509 --vendor homecare magokoro` でも指定可能にする。
 2. **フォルダ作成**：`C:\Users\you50\OneDrive\Documents\介護用品領収書\YYYYMM` を `mkdir(exist_ok=True)`。
-3. **Gmail 検索**：Gmail API（スコープ `gmail.readonly`）。
-   - 例：`subject:"お買上明細書URLのご連絡【フランスベッド ホームケア全科オンライン】" after:2025/09/01 before:2025/10/01`
-   - 初回のみブラウザで Google 認証 → `token.json` 保存、以降は自動。
+3. **Gmail 検索**：IMAP + X-GM-RAW（「すべてのメール」を読み取り専用で検索）。
+   - 例：`subject:"お買上明細書URLのご連絡" after:<9/1 0時JSTのUNIX時刻> before:<10/1 0時JST>`
+   - 取得後に件名全文・受信日時（日本時間）で再チェック。同月に複数通あれば `_1`, `_2` の連番。
 4. **フランスベッド**：本文 HTML から「電子領収書URL」直後のリンクを抽出 → Playwright で開き `page.pdf()` → `領収書ホームケア_YYYYMM.pdf`。
 5. **まごころ**：本文から `P\d+` 形式の注文番号を正規表現で抽出、「▼納品書ダウンロード用URL▼」のリンクを開く → 注文番号入力 → 「発行する」→「確認」or「発行」→ `expect_download()` で `領収書まごころ_YYYYMM.pdf` として直接保存。
 
@@ -63,6 +68,6 @@ kaigotool/
 
 ## 実装順
 
-1. Step1（Gmail API・PDF 保存・DL）— 外部画面依存が少なく先に固めやすい
-2. receipt_parser（Step1 の成果物でテスト可能）
+1. Step1（Gmail 検索・PDF 保存・DL）← 実装済み— 外部画面依存が少なく先に固めやすい
+2. 領収書読み取り ← 実装済み（Step1 が `YYYYMM/receipts.json` に日付・金額を出力）
 3. Step2 フォーム入力（送信前で停止）

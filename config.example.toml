@@ -1,0 +1,15 @@
+# このファイルを config.toml にコピーして値を設定してください。
+# config.toml は .gitignore 済み（パスワード等を GitHub に上げないため）。
+
+[paths]
+# 領収書の保存先。この下に YYYYMM フォルダが作られる
+receipt_root = 'C:\Users\you50\OneDrive\Documents\介護用品領収書'
+
+[gmail]
+address = "xxxx@gmail.com"
+# Google アカウントの「アプリ パスワード」（16 文字、スペースは有っても無くても可）
+app_password = ""
+
+[browser]
+# "msedge" = インストール済みの Edge を使用（playwright install 不要）
+channel = "msedge"
