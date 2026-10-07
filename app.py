@@ -14,8 +14,7 @@ from kaigo.cli import install_command, missing_dependencies
 def main() -> int:
     missing = missing_dependencies()
     if missing:
-        msg = (f"必要なライブラリが入っていません: {', '.join(missing)}\n\n"
-               f"VS Code のターミナルで次を実行してから、もう一度起動してください:\n\n{install_command()}")
+        msg = f"必要なライブラリが入っていません: {', '.join(missing)}\n\n{install_command()}"
         print(msg)
         try:
             from tkinter import Tk, messagebox

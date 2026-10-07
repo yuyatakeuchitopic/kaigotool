@@ -15,4 +15,4 @@ def missing_dependencies() -> list[str]:
 
 
 def install_command() -> str:
-    return f'& "{sys.executable}" -m pip install -r "{ROOT / "requirements.txt"}"'
+    return f"start.bat をダブルクリックして起動してください（初回にライブラリを自動で入れます）。\n手動の場合: & \"{sys.executable}\" -m pip install -r \"{ROOT / 'requirements.txt'}\""

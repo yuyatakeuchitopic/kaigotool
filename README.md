@@ -7,21 +7,22 @@
 
 Step2 は Step1 と独立して使えます。
 
-## セットアップ（Windows、初回のみ）
+## 起動（Windows）
 
-1. **Python 3.11 以上**をインストール
-2. VS Code のターミナルでライブラリをインストール（**起動に使う Python と同じもの**で）:
-   ```
-   & C:\Users\you50\.local\bin\python3.14.exe -m pip install -r C:\Users\you50\Downloads\kaigotool-claude-kaigo-insurance-automation-h38m9n\requirements.txt
-   ```
-   ブラウザはインストール済みの Edge を使うので `playwright install` は不要です。
+フォルダ内の **`start.bat` をダブルクリック**してください。
 
-## 起動
+- 初回だけ、このフォルダに専用の Python 環境（`.venv`）を作ってライブラリを入れます（数分）。
+  uv で入れた Python は直接ライブラリを入れられない（externally-managed-environment エラー）ため、この方式にしています。
+- 2 回目以降はすぐ画面が開きます。
+- ブラウザはインストール済みの Edge を使うので `playwright install` は不要です。
 
-ツールを置いたフォルダのパスに合わせて実行します（パスに空白が含まれる場合は `"` で囲む）。
+VS Code のターミナルから手動で行う場合:
 
 ```
-& C:\Users\you50\.local\bin\python3.14.exe C:\Users\you50\Downloads\kaigotool-claude-kaigo-insurance-automation-h38m9n\app.py
+cd C:\Users\you50\Downloads\kaigotool-claude-kaigo-insurance-automation-h38m9n
+& C:\Users\you50\.local\bin\python3.14.exe -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe app.py
 ```
 
 ### 設定の保存
