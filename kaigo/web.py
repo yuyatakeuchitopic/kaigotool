@@ -38,15 +38,24 @@ def download_magokoro_receipt(
     def on_download(d: Download) -> None:
         downloads.append(d)
 
+    pdf_responses = []
+
     def on_page(p: Page) -> None:
+        # 「ポップアップブロックの解除」が必要なサイト: ファイルは新しいウィンドウ側で届く
         popups.append(p)
+        p.on("download", on_download)
+
+    def on_response(r) -> None:
+        if "application/pdf" in (r.headers.get("content-type") or ""):
+            pdf_responses.append(r)
 
     def got_file():
-        return downloads or _pdf_popup(popups)
+        return downloads or pdf_responses or _pdf_popup(popups)
 
     page.on("download", on_download)
     page.on("dialog", lambda d: d.accept())  # JavaScript の確認ダイアログは OK
     context.on("page", on_page)
+    context.on("response", on_response)
     try:
         page.goto(url, wait_until="domcontentloaded")
         find_visible(page, _order_inputs(page), timeout_ms, "注文番号の入力欄").fill(order_no)
@@ -59,20 +68,32 @@ def download_magokoro_receipt(
         if not _wait(page, got_file, timeout_ms):
             raise RuntimeError("領収書・納品書ファイルのダウンロードを検出できませんでした")
 
-        if downloads:
-            downloads[0].save_as(dest)
-        else:
-            # ダウンロードではなく PDF が新しいタブで開いた場合
-            resp = context.request.get(_pdf_popup(popups).url)
-            dest.write_bytes(resp.body())
+        _save_file(context, downloads, pdf_responses, popups, dest)
     except Exception:
         page.screenshot(path=str(dest.with_suffix(".error.png")), full_page=True)
         raise
     finally:
         context.remove_listener("page", on_page)
+        context.remove_listener("response", on_response)
         for p in popups:
             p.close()
         page.close()
+
+
+def _save_file(context, downloads, pdf_responses, popups, dest: Path) -> None:
+    if downloads:
+        downloads[0].save_as(dest)
+        return
+    for r in pdf_responses:  # PDF がタブ内に表示された場合
+        try:
+            dest.write_bytes(r.body())
+            return
+        except Exception:
+            pass
+    popup = _pdf_popup(popups) or (popups[-1] if popups else None)
+    if popup is None:
+        raise RuntimeError("領収書・納品書ファイルを取得できませんでした")
+    dest.write_bytes(context.request.get(popup.url).body())
 
 
 def _order_inputs(page: Page) -> list[Locator]:
@@ -88,7 +109,9 @@ def _phone_inputs(page: Page) -> list[Locator]:
     return [
         page.get_by_label(re.compile("電話番号")),
         page.get_by_placeholder(re.compile("電話番号|0\\d{9}")),
-        page.locator("input[type='tel'], input[name*='tel' i], input[id*='tel' i], input[name*='phone' i]"),
+        # 電話番号はパスワード扱い（伏せ字）の入力欄になっている
+        page.locator("input[type='password'], input[type='tel'], input[name*='tel' i], input[id*='tel' i],"
+                     " input[name*='phone' i]"),
         page.locator("input[type='text'], input:not([type])").nth(1),
     ]
 

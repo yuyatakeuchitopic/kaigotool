@@ -1,6 +1,8 @@
 """模擬の申込ページで Step2 の画面操作を確認する（実サイトには接続しない）。"""
 
 import os
+import socket
+import time
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -11,7 +13,7 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 from kaigo.form import Slot, build_fields  # noqa: E402
 from kaigo.settings import Application  # noqa: E402
-from kaigo.step2 import open_and_fill  # noqa: E402
+from kaigo.step2 import fill_open_window, fill_page, launch_edge  # noqa: E402
 
 LAUNCH = {"executable_path": os.environ["PW_CHROMIUM_EXECUTABLE"]} if os.environ.get("PW_CHROMIUM_EXECUTABLE") else {}
 
@@ -91,14 +93,18 @@ SLOTS = [
 ]
 
 
-def _fill(site, fields):
+VALUES_JS = """() => Object.fromEntries(Array.from(document.querySelectorAll('input,select'))
+    .filter(e => e.type !== 'radio' || e.checked)
+    .map(e => [e.name, e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value]))"""
+
+
+def _fill(site, fields, start="/plan"):
     with sync_playwright() as p:
         browser = p.chromium.launch(**LAUNCH)
         page = browser.new_page()
-        failures = open_and_fill(page, f"{site}/plan", fields)
-        values = page.evaluate("""() => Object.fromEntries(Array.from(document.querySelectorAll('input,select'))
-            .filter(e => e.type !== 'radio' || e.checked)
-            .map(e => [e.name, e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value]))""")
+        page.goto(f"{site}{start}")
+        failures = fill_page(page, fields)
+        values = page.evaluate(VALUES_JS)
         browser.close()
     return failures, values
 
@@ -123,3 +129,48 @@ def test_blank_values_are_not_entered_and_bad_option_reported(site):
     assert [(f.label, r.split("（")[0]) for f, r in failures] == [("会員様との関係", "選択肢が見つかりません")]
     assert values["name"] == "介護　花子" and values["kana"] == "" and values["total"] == ""
     assert values["menu1"].startswith("介護用品の通信販売") and values["date1"] == "20261001"
+
+
+def test_form_page_already_open_is_filled_directly(site):
+    failures, values = _fill(site, build_fields(APP, SLOTS, "18136"), start="/form")
+    assert failures == [] and values["total"] == "18136"
+
+
+def _free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+@pytest.mark.skipif(not LAUNCH, reason="PW_CHROMIUM_EXECUTABLE（CDP 接続テスト用のブラウザ）未指定")
+def test_attach_to_already_open_browser(site, tmp_path, monkeypatch):
+    """「申請用 Edge を開く」で開いたブラウザ（ツールが操作していない普通の起動）に後から接続して入力する。"""
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    port = _free_port()
+    launch_edge(f"{site}/plan", port=port, exe=LAUNCH["executable_path"], extra_args=["--headless=new", "--no-sandbox"])
+    try:
+        for _ in range(50):  # 起動待ち
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                break
+            except OSError:
+                time.sleep(0.2)
+        time.sleep(1)
+        assert fill_open_window(f"{site}/plan", build_fields(APP, SLOTS, "18136"), port=port) == 0
+
+        # 接続を切ってもブラウザとページは残り、入力値が入っている
+        with sync_playwright() as p:
+            browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+            page = [pg for c in browser.contexts for pg in c.pages if "/form" in pg.url][0]
+            values = page.evaluate(VALUES_JS)
+            automated = page.evaluate("() => navigator.webdriver")
+            browser.close()
+        assert values["total"] == "18136" and values["date2"] == "20261001" and values["zero"] == "1"
+        assert automated is False  # 普通に起動したブラウザなので「自動操作中」と判定される目印が無い
+    finally:
+        os.system(f"pkill -f 'remote-debugging-port={port}' > /dev/null 2>&1")
+
+
+def test_attach_reports_when_no_browser(capsys):
+    assert fill_open_window("https://example.com/", [], port=_free_port()) == 1
+    assert "申請用の Edge に接続できません" in capsys.readouterr().out

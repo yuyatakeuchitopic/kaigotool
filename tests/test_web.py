@@ -36,13 +36,19 @@ HOMECARE_HTML = """<html><body><h1>納品書 兼 お買上明細書</h1><table>
 <tr><td>合計金額</td><td>9,710円</td><td>883円</td></tr></table>
 <p>■ご 注 文 日 ：2026 年09 月02 日</p></body></html>"""
 
+# 実画面（ラク帳票）に合わせた模擬: ラベルは <label for> ではない、電話番号は伏せ字入力、
+# 「領収書・納品書を発行する」は新しいウィンドウ（ポップアップ）でファイルを返す
 MAGOKORO_FORM = """<html><body><form action="/magokoro/login" method="get">
-<label for="o">注文番号</label><input id="o" name="order" type="text">
-<label for="t">電話番号</label><input id="t" name="tel" type="text">
-<button type="submit">ログイン</button></form></body></html>"""
+<p>ログイン情報を入力してください。</p>
+<div><b>注文番号</b></div><input type="text" name="order_no">
+<div><b>電話番号</b></div><input type="password" name="tel_pw">
+<label><input type="checkbox">パスワードを表示</label>
+<input type="submit" value="ログイン"></form></body></html>"""
 
-MAGOKORO_MYPAGE = """<html><body><p>注文番号 {order}</p>
-<a href="/magokoro/file?order={order}"><button type="button">領収書・納品書を発行する</button></a></body></html>"""
+MAGOKORO_MAIN = """<html><body><h2>発行したい書類を選択してください</h2>
+<div>領収書・納品書</div>
+<a href="#" onclick="window.open('/magokoro/file?order={order}'); return false;">領収書・納品書を発行する</a>
+</body></html>"""
 
 
 @pytest.fixture(scope="module")
@@ -70,8 +76,8 @@ def site():
             elif u.path == "/magokoro":
                 self._send(MAGOKORO_FORM.encode(), "text/html; charset=utf-8")
             elif u.path == "/magokoro/login":
-                seen["order"], seen["tel"] = q.get("order"), q.get("tel")
-                self._send(MAGOKORO_MYPAGE.format(order=q.get("order")).encode(), "text/html; charset=utf-8")
+                seen["order"], seen["tel"] = q.get("order_no"), q.get("tel_pw")
+                self._send(MAGOKORO_MAIN.format(order=q.get("order_no")).encode(), "text/html; charset=utf-8")
             elif u.path == "/magokoro/file":
                 self._send(pdf, "application/pdf", {"Content-Disposition": 'attachment; filename="d.pdf"'})
             else:

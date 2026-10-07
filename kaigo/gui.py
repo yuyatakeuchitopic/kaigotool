@@ -204,8 +204,15 @@ class App:
         self.total_hint = tk.StringVar()
         ttk.Label(totf, textvariable=self.total_hint, foreground="gray").pack(side="left", padx=8)
 
-        self.run2_btn = ttk.Button(f, text="申請画面を開いて入力（送信はしません）", command=self.run_step2)
-        self.run2_btn.pack(anchor="w", pady=(10, 0))
+        bf = ttk.Frame(f)
+        bf.pack(anchor="w", pady=(10, 0))
+        ttk.Button(bf, text="① 申請用 Edge を開く", command=self.open_edge).pack(side="left")
+        self.run2_btn = ttk.Button(bf, text="② 開いている申請画面に入力（送信はしません）", command=self.run_step2)
+        self.run2_btn.pack(side="left", padx=8)
+        ttk.Label(f, foreground="gray", justify="left", text=(
+            "①で開いた Edge でご自身でログインし、申込プラン（または申込入力）画面を開いてから②を押してください。\n"
+            "ログイン状態はこの Edge に残るので、次回からはログイン不要の場合があります。"
+        )).pack(anchor="w", pady=(4, 0))
 
     # ------------------------------------------------------------------ Step2 の枠
     def _apply_preset(self, row: dict) -> None:
@@ -375,14 +382,23 @@ class App:
             "未入力の項目", "次の項目が空欄です（サイトには入力されません）。続けますか？\n\n" + "\n".join(missing)
         ):
             return
-        url, channel = self.url_var.get().strip(), self.s.browser_channel
+        url = self.url_var.get().strip()
 
         def task():
-            from .step2 import run
+            from .step2 import fill_open_window
 
-            return run(url, fields, channel)
+            return fill_open_window(url, fields)
 
         self._start("Step2 申請入力", task)
+
+    def open_edge(self) -> None:
+        from .step2 import launch_edge
+
+        try:
+            launch_edge(self.url_var.get().strip())
+        except Exception as e:
+            return messagebox.showerror("Edge を起動できません", str(e))
+        self._log("申請用の Edge を開きました。ログインして申込プランの画面を開き、②を押してください。\n")
 
     def _start(self, title: str, task, done=None) -> None:
         if self.busy:

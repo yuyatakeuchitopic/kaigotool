@@ -100,3 +100,13 @@ kaigotool/
 - まごころ: 無ければ、フォルダ内の命名規則外の PDF をリネームして採用。それも無ければメールから取得。
   納品書ページは 注文番号 + 電話番号 で「ログイン」→「領収書・納品書を発行する」でダウンロード。
 - 電話番号は個人情報のためコードに持たず、画面で入力して設定に保存する。
+
+## Step2 の Cloudflare 対策（変更）
+
+ツールが起動・操作するブラウザ（Playwright の launch）は Cloudflare の認証で弾かれたため、方式を変更した。
+
+1. 「申請用 Edge を開く」: msedge.exe を `--remote-debugging-port=9222 --user-data-dir=%LOCALAPPDATA%\kaigotool\edge-profile`
+   で普通に起動する（自動操作フラグ無し。`navigator.webdriver` は false）。
+2. ユーザーが手動でログインし申込画面を開く（人の操作なので Cloudflare を通過）。
+3. 「開いている申請画面に入力」: `connect_over_cdp` で接続し、申込入力画面ならそのまま、申込プラン画面なら
+   「申し込む」を押してから入力。終了時は接続を切るだけで Edge は開いたまま。
