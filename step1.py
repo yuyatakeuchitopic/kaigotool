@@ -1,7 +1,7 @@
 """Step1: メールから領収書を取得する。
 
 使い方:
-    python step1.py                       # ダイアログで対象年月・業者を選択
+    python step1.py                       # ダイアログで対象年月（既定は当月）・業者を選択
     python step1.py --month 202609        # 年月指定（業者は両方）
     python step1.py --month 202609 --vendor magokoro
 """
@@ -12,8 +12,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from kaigo.config import load_config
-from kaigo.step1 import run
+from kaigo.cli import check_dependencies
+from kaigo.config import ConfigError, load_config
 from kaigo.vendors import VENDORS
 
 
@@ -26,17 +26,27 @@ def main() -> int:
     ap.add_argument("--show-browser", action="store_true", help="まごころのダウンロード操作を画面表示する")
     args = ap.parse_args()
 
+    if not check_dependencies():
+        return 1
+    try:
+        cfg = load_config(args.config)
+        cfg.require_gmail()
+    except ConfigError as e:
+        print(e)
+        return 1
+
     month, vendors = args.month, args.vendor or list(VENDORS)
     if month is None:
-        from kaigo.ui import ask
+        from kaigo.ui import ask_step1
 
-        chosen = ask(None, vendors)
+        chosen = ask_step1(None, vendors)
         if chosen is None:
             print("キャンセルしました")
             return 1
         month, vendors = chosen
 
-    cfg = load_config(args.config)
+    from kaigo.step1 import run
+
     return run(cfg, month, vendors, overwrite=args.overwrite, show_browser=args.show_browser)
 
 

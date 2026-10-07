@@ -1,11 +1,12 @@
-# このファイルを config.toml にコピーして値を設定してください。
-# config.toml は .gitignore 済み（パスワード等を GitHub に上げないため）。
+# このファイルを config.toml という名前でコピーして値を設定してください。
+# config.toml は .gitignore 済み（口座番号・パスワード等を GitHub に上げないため）。
 
 [paths]
-# 領収書の保存先。この下に YYYYMM フォルダが作られる
+# 領収書の保存先。この下に YYYYMM フォルダがある前提
 receipt_root = 'C:\Users\you50\OneDrive\Documents\介護用品領収書'
 
 [gmail]
+# Step1 でのみ使用（Step2 だけ使う場合は空のままで可）
 address = "xxxx@gmail.com"
 # Google アカウントの「アプリ パスワード」（16 文字、スペースは有っても無くても可）
 app_password = ""
@@ -13,3 +14,21 @@ app_password = ""
 [browser]
 # "msedge" = インストール済みの Edge を使用（playwright install 不要）
 channel = "msedge"
+
+[application]
+# Step2 の申請フォームに入力する固定値（プルダウンは画面の表示文字と同じにする）
+care_name = "介護　太郎"            # 介護対象者 氏名
+care_name_kana = "ｶｲｺﾞ　ﾀﾛｳ"        # ｶｲｺﾞﾀｲｼｮｳｼｬ ｼﾒｲ
+relation = "（義）祖父母"           # 会員様との関係
+care_level = "要介護5"              # 要支援・要介護 度
+cert_start = "20250101"             # 要介護認定の認定年月日（開始）
+cert_end = "20280131"               # 要介護認定の有効期限（終了）
+bank_code = "0000"                  # 金融機関コード
+bank_name = "ｷﾞﾝｺｳﾒｲ"               # 金融機関名
+branch_code = "000"                 # 支店コード
+branch_name = "ｼﾃﾝﾒｲ"               # 支店名
+account_type = "普通"               # 口座の種類
+account_number = "1234567"          # 口座番号
+account_holder = "ﾒｲｷﾞﾆﾝ"           # ｺｳｻﾞﾒｲｷﾞﾆﾝ
+# 申込ページの URL（変わったときだけ書き換える）
+# url = "https://life.bs.benefit-one.inc/menus/..."

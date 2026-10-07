@@ -57,3 +57,47 @@ def pdf_text(path: Path) -> str:
 
     with pdfplumber.open(path) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
+
+
+@dataclass
+class Receipt:
+    vendor: str  # VENDORS のキー
+    path: Path
+    date: str | None  # YYYYMMDD
+    amount: int | None
+    note: str = ""  # 読み取れなかった理由など
+
+
+def _receipt_file_re(prefix: str, ym: str) -> re.Pattern:
+    # 「領収書まごころ_202609 .pdf」のように拡張子前に空白があっても拾う
+    return re.compile(rf"^{re.escape(prefix)}_{ym}(?:_(\d+))?\s*\.pdf$", re.IGNORECASE)
+
+
+def find_receipts(folder: Path, ym: str) -> list[Receipt]:
+    """YYYYMM フォルダから命名規則どおりの領収書 PDF を探して読み取る。
+
+    並び順は ホームケア → まごころ、同じ業者は連番順。
+    """
+    from .vendors import VENDORS
+
+    parsers = {"homecare": parse_homecare, "magokoro": parse_magokoro}
+    files = sorted(folder.iterdir()) if folder.is_dir() else []
+    out: list[Receipt] = []
+    for key, vendor in VENDORS.items():
+        pat = _receipt_file_re(vendor.file_prefix, ym)
+        hits = [(int(m.group(1) or 0), f) for f in files if (m := pat.match(f.name))]
+        for _, f in sorted(hits):
+            out.append(_read_receipt(key, f, parsers[key]))
+    return out
+
+
+def _read_receipt(key: str, path: Path, parser) -> Receipt:
+    try:
+        text = pdf_text(path)
+    except Exception as e:
+        return Receipt(key, path, None, None, f"PDF を読めません: {e}")
+    if not text.strip():
+        return Receipt(key, path, None, None, "文字情報のない（画像の）PDF です。手入力してください")
+    info = parser(text)
+    note = "" if info.date and info.amount is not None else "一部読み取れませんでした。手入力してください"
+    return Receipt(key, path, info.date, info.amount, note)

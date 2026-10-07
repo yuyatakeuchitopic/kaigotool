@@ -45,12 +45,12 @@ def download_magokoro_receipt(
     context.on("page", on_page)
     try:
         page.goto(url, wait_until="domcontentloaded")
-        _visible(page, _order_inputs(page), timeout_ms, "注文番号の入力欄").fill(order_no)
-        _visible(page, _buttons(page, ["発行する"]), timeout_ms, "「発行する」ボタン").click()
+        find_visible(page, _order_inputs(page), timeout_ms, "注文番号の入力欄").fill(order_no)
+        find_visible(page, buttons(page, ["発行する"]), timeout_ms, "「発行する」ボタン").click()
 
         # 「発行する」で直接ダウンロードされない場合は「確認」「発行」を押す
         if not _wait(page, lambda: downloads or _pdf_popup(popups), 5_000):
-            _visible(page, _buttons(page, ["確認", "発行"]), timeout_ms, "「確認」/「発行」ボタン").click()
+            find_visible(page, buttons(page, ["確認", "発行"]), timeout_ms, "「確認」/「発行」ボタン").click()
             if not _wait(page, lambda: downloads or _pdf_popup(popups), timeout_ms):
                 raise RuntimeError("納品書ファイルのダウンロードを検出できませんでした")
 
@@ -79,7 +79,7 @@ def _order_inputs(page: Page) -> list[Locator]:
     ]
 
 
-def _buttons(page: Page, names: list[str]) -> list[Locator]:
+def buttons(page: Page, names: list[str]) -> list[Locator]:
     out: list[Locator] = []
     for exact in (True, False):
         for name in names:
@@ -88,7 +88,7 @@ def _buttons(page: Page, names: list[str]) -> list[Locator]:
     return out
 
 
-def _visible(page: Page, candidates: list[Locator], timeout_ms: int, what: str) -> Locator:
+def find_visible(page: Page, candidates: list[Locator], timeout_ms: int, what: str) -> Locator:
     """候補のうち最初に見つかった表示中の要素を返す。"""
     deadline = time.monotonic() + timeout_ms / 1000
     while time.monotonic() < deadline:

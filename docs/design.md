@@ -25,6 +25,7 @@ Edge で動かすため `channel="msedge"` を指定する（Edge 本体をそ�
 ```
 kaigotool/
   step1.py             # Step1 起動スクリプト
+  step2.py             # Step2 起動スクリプト
   config.example.toml  # 設定ひな形（実ファイル config.toml は git 管理外）
   kaigo/
     mail.py            # Gmail IMAP 検索・本文取得
@@ -32,7 +33,9 @@ kaigotool/
     web.py             # ホームケア PDF 保存 / まごころ納品書 DL（Playwright）
     receipts.py        # 領収書の日付・金額読み取り（Step2 用）
     step1.py           # Step1 の処理本体（ファイル命名・receipts.json 出力）
-    ui.py              # 対象年月・業者の選択ダイアログ
+    form.py            # 申請フォームの入力項目定義と入力処理
+    step2.py           # Step2 の処理本体（ログイン待ち → 申し込む → 入力）
+    ui.py              # 対象年月・業者選択 / 領収書内容の確認ダイアログ
     vendors.py         # 業者ごとの件名・ファイル名定義
 ```
 
@@ -70,4 +73,14 @@ kaigotool/
 
 1. Step1（Gmail 検索・PDF 保存・DL）← 実装済み— 外部画面依存が少なく先に固めやすい
 2. 領収書読み取り ← 実装済み（Step1 が `YYYYMM/receipts.json` に日付・金額を出力）
-3. Step2 フォーム入力（送信前で停止）
+3. Step2 フォーム入力（送信前で停止）← 実装済み。Step1 とは独立し、YYYYMM フォルダの PDF を直接読む
+
+## Step2 の補足（実装時の判断）
+
+- 領収書は YYYYMM フォルダから命名規則（`_1`, `_2` 連番、拡張子前の空白も許容）で探し、PDF の文字から日付・金額を読む。
+  画像だけの PDF（Microsoft Print to PDF 等）は読めないため、確認ダイアログで手入力する。
+- 入力欄は画面上の項目名テキストを手掛かりに、その後ろの最初の入力欄を探す（全角/半角・空白は無視）。
+  説明文中の同じ語句を誤って拾わないよう、短い表示中の要素を優先する。
+- 領収書 1 件につき 1 枠（①②③…）。ご申請合計金額は全件の合計。
+- ログイン状態は `%LOCALAPPDATA%\kaigotool\edge-profile` に保持（普段の Edge とは別プロファイル）。
+- 「次へ」以降は押さない。入力できなかった項目はターミナルに一覧表示する。

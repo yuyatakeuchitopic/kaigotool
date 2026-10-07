@@ -12,6 +12,8 @@ class Vendor:
     subject: str  # 件名に含まれる文字列（取得後の絞り込みに使用）
     search_phrase: str  # Gmail 検索に使う件名の一部
     file_prefix: str
+    menu_no: str  # 申請フォームの「メニューNo.」
+    menu_name: str  # 申請フォームの「メニュー名」
 
 
 VENDORS: dict[str, Vendor] = {
@@ -21,6 +23,8 @@ VENDORS: dict[str, Vendor] = {
         subject="ご注文商品発送及びお買上明細書URLのご連絡【フランスベッド ホームケア全科オンライン】",
         search_phrase="お買上明細書URLのご連絡",
         file_prefix="領収書ホームケア",
+        menu_no="10640022",
+        menu_name="フランスベッド ホームケア全科オンライン",
     ),
     "magokoro": Vendor(
         key="magokoro",
@@ -28,5 +32,7 @@ VENDORS: dict[str, Vendor] = {
         subject="【まごころサポート for ベネフィット・ステーション】ご注文ありがとうございました",
         search_phrase="まごころサポート for ベネフィット・ステーション",
         file_prefix="領収書まごころ",
+        menu_no="10640395",
+        menu_name="介護用品の通信販売 まごころサポート(「リフレ」紙おむつ)など",
     ),
 }
