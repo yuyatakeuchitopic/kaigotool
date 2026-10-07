@@ -8,9 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import Application
-from .receipts import Receipt
-from .vendors import VENDORS
+from .settings import Application
 
 SLOT_MARKS = "①②③④⑤⑥⑦⑧⑨⑩"
 
@@ -22,14 +20,20 @@ class Field:
     value: str
 
 
-def build_fields(app: Application, receipts: list[Receipt]) -> list[Field]:
-    if not receipts:
-        raise ValueError("領収書がありません")
-    if len(receipts) > len(SLOT_MARKS):
-        raise ValueError(f"領収書は {len(SLOT_MARKS)} 件までです")
-    missing = [r.path.name for r in receipts if not r.date or r.amount is None]
-    if missing:
-        raise ValueError(f"日付または金額が未入力です: {', '.join(missing)}")
+@dataclass
+class Slot:
+    """申請フォームの ①②③… 1 枠分。"""
+
+    menu_no: str
+    menu_name: str
+    date: str  # 領収書発行年月日 YYYYMMDD
+
+
+def build_fields(app: Application, slots: list[Slot], total: str) -> list[Field]:
+    """入力する項目の一覧。空欄の項目は入力しない（サイト側の値のまま）。"""
+    slots = [s for s in slots if s.menu_no or s.menu_name or s.date]
+    if len(slots) > len(SLOT_MARKS):
+        raise ValueError(f"領収書の枠は {len(SLOT_MARKS)} 件までです")
 
     fields = [
         Field("radio", "ご利用規約は、ご確認されましたか", "はい"),
@@ -40,16 +44,15 @@ def build_fields(app: Application, receipts: list[Receipt]) -> list[Field]:
         Field("text", "要介護認定の認定年月日（開始）", app.cert_start),
         Field("text", "要介護認定の有効期限（終了）", app.cert_end),
     ]
-    # 領収書 1 件につき 1 枠（①ホームケア ②まごころ … の順）
-    for mark, r in zip(SLOT_MARKS, receipts):
-        vendor = VENDORS[r.vendor]
+    # 空いた行は詰めて ①②③… に割り当てる
+    for mark, s in zip(SLOT_MARKS, slots):
         fields += [
-            Field("text", f"{mark}メニューNo.", vendor.menu_no),
-            Field("text", f"{mark}メニュー名", vendor.menu_name),
-            Field("text", f"{mark}領収書発行年月日", r.date),
+            Field("text", f"{mark}メニューNo.", s.menu_no),
+            Field("text", f"{mark}メニュー名", s.menu_name),
+            Field("text", f"{mark}領収書発行年月日", s.date),
         ]
     fields += [
-        Field("text", "ご申請合計金額", str(sum(r.amount for r in receipts))),
+        Field("text", "ご申請合計金額", total),
         Field("text", "金融機関コード", app.bank_code),
         Field("text", "金融機関名", app.bank_name),
         Field("text", "支店コード", app.branch_code),
@@ -60,7 +63,7 @@ def build_fields(app: Application, receipts: list[Receipt]) -> list[Field]:
         Field("radio", "不備の場合は、WEB申請はメールで案内", "はい"),
         Field("radio", "申込合計金額・お支払い金額が0円と表示されます", "はい"),
     ]
-    return fields
+    return [f for f in fields if f.value.strip()]
 
 
 # label の後ろにある入力欄に data-kaigo-target を付ける。見つからなければ理由を返す。

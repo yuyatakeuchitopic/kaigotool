@@ -5,10 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from .config import Application, Config
-from .form import build_fields, fill_fields
-from .receipts import Receipt
-from .vendors import VENDORS
+from .form import Field, fill_fields
 from .web import buttons, find_visible
 
 LOGIN_TIMEOUT_MS = 15 * 60 * 1000
@@ -21,16 +18,9 @@ def profile_dir() -> Path:
     return Path(base) / "kaigotool" / "edge-profile"
 
 
-def print_receipts(receipts: list[Receipt]) -> None:
-    for mark, r in zip("①②③④⑤⑥⑦⑧⑨⑩", receipts):
-        print(f"  {mark} {VENDORS[r.vendor].label}  {r.path.name}  日付:{r.date}  金額:{r.amount:,}円")
-    print(f"  合計: {sum(r.amount for r in receipts):,}円")
-
-
-def open_and_fill(page, app: Application, receipts: list[Receipt]) -> list:
+def open_and_fill(page, url: str, fields: list[Field]) -> list:
     """申込ページ → (ログイン待ち) →「申し込む」→ フォーム入力。入力できなかった項目を返す。"""
-    fields = build_fields(app, receipts)
-    page.goto(app.url, wait_until="domcontentloaded")
+    page.goto(url, wait_until="domcontentloaded")
 
     print("ログインが必要な場合はブラウザでログインしてください（最大 15 分待ちます）。")
     print("ログイン後に申込プランの画面が出なければ、その画面まで移動してください。")
@@ -54,20 +44,21 @@ def _scroll_through(page) -> None:
     page.evaluate("() => window.scrollTo(0, 0)")
 
 
-def run(cfg: Config, receipts: list[Receipt]) -> int:
+def run(url: str, fields: list[Field], browser_channel: str | None) -> int:
     from playwright.sync_api import sync_playwright
 
-    app = cfg.require_application()
-    print("申請内容:")
-    print_receipts(receipts)
+    print("入力する内容:")
+    for f in fields:
+        if f.kind != "radio":
+            print(f"  {f.label}: {f.value}")
 
     with sync_playwright() as pw:
         context = pw.chromium.launch_persistent_context(
-            str(profile_dir()), channel=cfg.browser_channel, headless=False, no_viewport=True, locale="ja-JP"
+            str(profile_dir()), channel=browser_channel or None, headless=False, no_viewport=True, locale="ja-JP"
         )
         page = context.pages[0] if context.pages else context.new_page()
         try:
-            failures = open_and_fill(page, app, receipts)
+            failures = open_and_fill(page, url, fields)
         except Exception as e:
             print(f"\n× 自動入力を中断しました: {e}")
             failures = None
@@ -77,11 +68,12 @@ def run(cfg: Config, receipts: list[Receipt]) -> int:
             for f, reason in failures:
                 print(f"  - {f.label}: {f.value}  （{reason}）")
         elif failures is not None:
-            print("\n○ すべての項目を入力しました。")
+            print("\n○ 入力が完了しました。")
         print("\n内容を確認し、「次へ」以降の操作はブラウザでご自身で行ってください。")
-        print("申請が終わったらブラウザを閉じてください（このプログラムも終了します）。")
+        print("申請が終わったらブラウザを閉じてください。")
         try:
             context.wait_for_event("close", timeout=0)
         except Exception:
             pass
+    print("ブラウザが閉じられました。")
     return 0 if failures == [] else 1

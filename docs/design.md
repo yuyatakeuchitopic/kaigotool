@@ -24,19 +24,19 @@ Edge で動かすため `channel="msedge"` を指定する（Edge 本体をそ�
 
 ```
 kaigotool/
-  step1.py             # Step1 起動スクリプト
-  step2.py             # Step2 起動スクリプト
-  config.example.toml  # 設定ひな形（実ファイル config.toml は git 管理外）
+  app.py               # 起動スクリプト（画面）
   kaigo/
+    gui.py             # 画面（Step1 / Step2 タブ、設定保存、ログ表示）
+    settings.py        # 設定の保存・読み込み（%LOCALAPPDATA%\kaigotool\settings.json）
     mail.py            # Gmail IMAP 検索・本文取得
     extract.py         # 本文から URL・注文番号を抽出
     web.py             # ホームケア PDF 保存 / まごころ納品書 DL（Playwright）
-    receipts.py        # 領収書の日付・金額読み取り（Step2 用）
-    step1.py           # Step1 の処理本体（ファイル命名・receipts.json 出力）
+    receipts.py        # 領収書の検索・日付・金額読み取り
+    step1.py           # Step1 の処理本体
     form.py            # 申請フォームの入力項目定義と入力処理
     step2.py           # Step2 の処理本体（ログイン待ち → 申し込む → 入力）
-    ui.py              # 対象年月・業者選択 / 領収書内容の確認ダイアログ
-    vendors.py         # 業者ごとの件名・ファイル名定義
+    inputs.py          # 年月・日付・金額の入力チェック
+    vendors.py         # 業者ごとの件名・ファイル名・メニュー定義
 ```
 
 ## Step1：メールから領収書取得
@@ -84,3 +84,11 @@ kaigotool/
 - 領収書 1 件につき 1 枠（①②③…）。ご申請合計金額は全件の合計。
 - ログイン状態は `%LOCALAPPDATA%\kaigotool\edge-profile` に保持（普段の Edge とは別プロファイル）。
 - 「次へ」以降は押さない。入力できなかった項目はターミナルに一覧表示する。
+
+## 画面化（設定の保存・入力方法の切り替え）
+
+- 申請者情報（介護対象者・口座）はリポジトリが公開のためコードに持たず、画面で入力して
+  `%LOCALAPPDATA%\kaigotool\settings.json` に保存。保存値が次回の既定値になる。
+- Step2 の入力方法: 「PDF から読み取り・合計自動計算」/「画面の入力内容をそのまま使う」。
+  PDF モードで読み込んだ行が未入力のままだと、合計が欠けないよう申請に進めない。
+- 処理はバックグラウンドのスレッドで実行し、print 出力を画面のログ欄に表示する。

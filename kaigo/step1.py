@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .config import Config
+from .settings import Settings
 from .extract import magokoro_order_number, normalize, url_after
 from .mail import GmailImap, Mail
 from .receipts import ReceiptInfo, parse_homecare, parse_magokoro, pdf_text
@@ -67,7 +67,7 @@ def file_names(vendor: Vendor, ym: str, count: int) -> list[str]:
     return [f"{vendor.file_prefix}_{ym}_{i}.pdf" for i in range(1, count + 1)]
 
 
-def fetch_mails(cfg: Config, ym: str, vendor_keys: list[str]) -> dict[str, list[Mail]]:
+def fetch_mails(cfg: Settings, ym: str, vendor_keys: list[str]) -> dict[str, list[Mail]]:
     out: dict[str, list[Mail]] = {}
     with GmailImap(cfg.gmail_address, cfg.gmail_app_password) as gmail:
         for key in vendor_keys:
@@ -151,8 +151,8 @@ def print_summary(results: list[Result]) -> None:
     print(f"合計: {total:,}円")
 
 
-def run(cfg: Config, ym: str, vendor_keys: list[str], overwrite: bool = False, show_browser: bool = False) -> int:
-    folder = cfg.receipt_root / ym
+def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False, show_browser: bool = False) -> int:
+    folder = Path(cfg.receipt_root) / ym
     folder.mkdir(parents=True, exist_ok=True)
     print(f"保存先: {folder}")
 
@@ -172,7 +172,7 @@ def run(cfg: Config, ym: str, vendor_keys: list[str], overwrite: bool = False, s
             if headless not in contexts:
                 if pw is None:
                     pw = stack.enter_context(sync_playwright())
-                browser = pw.chromium.launch(channel=cfg.browser_channel, headless=headless)
+                browser = pw.chromium.launch(channel=cfg.browser_channel or None, headless=headless)
                 stack.callback(browser.close)
                 contexts[headless] = browser.new_context(accept_downloads=True, locale="ja-JP")
             return contexts[headless]

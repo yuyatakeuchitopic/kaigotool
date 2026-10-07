@@ -3,15 +3,14 @@
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 
 import pytest
 
 pytest.importorskip("playwright")
 from playwright.sync_api import sync_playwright  # noqa: E402
 
-from kaigo.config import Application  # noqa: E402
-from kaigo.receipts import Receipt  # noqa: E402
+from kaigo.form import Slot, build_fields  # noqa: E402
+from kaigo.settings import Application  # noqa: E402
 from kaigo.step2 import open_and_fill  # noqa: E402
 
 LAUNCH = {"executable_path": os.environ["PW_CHROMIUM_EXECUTABLE"]} if os.environ.get("PW_CHROMIUM_EXECUTABLE") else {}
@@ -80,26 +79,32 @@ def site():
     srv.shutdown()
 
 
-def test_open_and_fill(site):
-    app = Application(
-        care_name="介護　花子", care_name_kana="ｶｲｺﾞ　ﾊﾅｺ", relation="（義）祖父母", care_level="要介護5",
-        cert_start="20250129", cert_end="20280131", bank_code="0009", bank_name="ﾃｽﾄｷﾞﾝｺｳ",
-        branch_code="111", branch_name="ﾃｽﾄｼﾃﾝ", account_type="普通", account_number="1234567",
-        account_holder="ﾃｽﾄﾀﾛｳ", url=f"{site}/plan",
-    )
-    receipts = [
-        Receipt("homecare", Path("a.pdf"), "20261002", 9710),
-        Receipt("magokoro", Path("b.pdf"), "20261001", 8426),
-    ]
+APP = Application(
+    care_name="介護　花子", care_name_kana="ｶｲｺﾞ　ﾊﾅｺ", relation="（義）祖父母", care_level="要介護5",
+    cert_start="20250129", cert_end="20280131", bank_code="0009", bank_name="ﾃｽﾄｷﾞﾝｺｳ",
+    branch_code="111", branch_name="ﾃｽﾄｼﾃﾝ", account_type="普通", account_number="1234567",
+    account_holder="ﾃｽﾄﾀﾛｳ",
+)
+SLOTS = [
+    Slot("10640022", "フランスベッド ホームケア全科オンライン", "20261002"),
+    Slot("10640395", "介護用品の通信販売 まごころサポート(「リフレ」紙おむつ)など", "20261001"),
+]
+
+
+def _fill(site, fields):
     with sync_playwright() as p:
         browser = p.chromium.launch(**LAUNCH)
         page = browser.new_page()
-        failures = open_and_fill(page, app, receipts)
+        failures = open_and_fill(page, f"{site}/plan", fields)
         values = page.evaluate("""() => Object.fromEntries(Array.from(document.querySelectorAll('input,select'))
             .filter(e => e.type !== 'radio' || e.checked)
             .map(e => [e.name, e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value]))""")
         browser.close()
+    return failures, values
 
+
+def test_open_and_fill(site):
+    failures, values = _fill(site, build_fields(APP, SLOTS, "18136"))
     assert failures == []
     assert values == {
         "terms": "1", "name": "介護　花子", "kana": "ｶｲｺﾞ　ﾊﾅｺ", "rel": "（義）祖父母", "level": "要介護5",
@@ -110,3 +115,11 @@ def test_open_and_fill(site):
         "total": "18136", "bcode": "0009", "bname": "ﾃｽﾄｷﾞﾝｺｳ", "brcode": "111", "brname": "ﾃｽﾄｼﾃﾝ",
         "atype": "普通", "anum": "1234567", "aholder": "ﾃｽﾄﾀﾛｳ", "defect": "1", "zero": "1",
     }
+
+
+def test_blank_values_are_not_entered_and_bad_option_reported(site):
+    app = Application(care_name="介護　花子", relation="存在しない続柄")
+    failures, values = _fill(site, build_fields(app, SLOTS[1:], ""))
+    assert [(f.label, r.split("（")[0]) for f, r in failures] == [("会員様との関係", "選択肢が見つかりません")]
+    assert values["name"] == "介護　花子" and values["kana"] == "" and values["total"] == ""
+    assert values["menu1"].startswith("介護用品の通信販売") and values["date1"] == "20261001"
