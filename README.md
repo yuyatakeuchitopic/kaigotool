@@ -12,14 +12,16 @@ Step2 は Step1 と独立して使えます。
 1. **Python 3.11 以上**をインストール
 2. VS Code のターミナルでライブラリをインストール（**起動に使う Python と同じもの**で）:
    ```
-   & C:\Users\you50\.local\bin\python3.14.exe -m pip install -r <このフォルダ>\requirements.txt
+   & C:\Users\you50\.local\bin\python3.14.exe -m pip install -r C:\Users\you50\Downloads\kaigotool-claude-kaigo-insurance-automation-h38m9n\requirements.txt
    ```
    ブラウザはインストール済みの Edge を使うので `playwright install` は不要です。
 
 ## 起動
 
+ツールを置いたフォルダのパスに合わせて実行します（パスに空白が含まれる場合は `"` で囲む）。
+
 ```
-& C:\Users\you50\.local\bin\python3.14.exe <このフォルダ>\app.py
+& C:\Users\you50\.local\bin\python3.14.exe C:\Users\you50\Downloads\kaigotool-claude-kaigo-insurance-automation-h38m9n\app.py
 ```
 
 ### 設定の保存
