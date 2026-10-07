@@ -60,6 +60,7 @@ class Settings:
     receipt_root: str = DEFAULT_RECEIPT_ROOT
     gmail_address: str = ""
     gmail_app_password: str = ""
+    magokoro_phone: str = ""  # まごころ納品書ページのログインに使う電話番号
     browser_channel: str = "msedge"
     apply_url: str = DEFAULT_APPLY_URL
     step2_mode: str = "pdf"  # pdf: PDF から読み取り / manual: 画面の入力内容のみ

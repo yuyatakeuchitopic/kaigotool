@@ -110,14 +110,23 @@ class App:
         self.gmail_pw = tk.StringVar(value=self.s.gmail_app_password)
         ttk.Entry(f, textvariable=self.gmail_pw, width=40, show="●").grid(row=3, column=1, sticky="w")
 
+        ttk.Label(f, text="電話番号（まごころ）").grid(row=4, column=0, sticky="w", pady=2)
+        self.magokoro_phone = tk.StringVar(value=self.s.magokoro_phone)
+        ttk.Entry(f, textvariable=self.magokoro_phone, width=20).grid(row=4, column=1, sticky="w")
+
         self.overwrite = tk.BooleanVar(value=False)
         self.show_browser = tk.BooleanVar(value=False)
-        ttk.Checkbutton(f, text="既存の領収書ファイルも取り直す", variable=self.overwrite).grid(
-            row=4, column=1, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(f, text="既存の領収書ファイルがあってもメールから取り直す", variable=self.overwrite).grid(
+            row=5, column=1, sticky="w", pady=(8, 0))
         ttk.Checkbutton(f, text="まごころの操作をブラウザに表示する（動作確認用）", variable=self.show_browser).grid(
-            row=5, column=1, sticky="w")
+            row=6, column=1, sticky="w")
+        ttk.Label(f, foreground="gray", justify="left", text=(
+            "・対象年月のフォルダに命名規則どおりの領収書があれば、その業者は取得しません\n"
+            "・まごころ: フォルダ内に他の名前の PDF があれば「領収書まごころ_YYYYMM.pdf」にリネームします\n"
+            "・Gmail と電話番号はメールから取得するときだけ使います"
+        )).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
         self.run1_btn = ttk.Button(f, text="領収書を取得", command=self.run_step1)
-        self.run1_btn.grid(row=6, column=1, sticky="w", pady=(12, 0))
+        self.run1_btn.grid(row=8, column=1, sticky="w", pady=(12, 0))
 
     def _build_step2(self, f: ttk.Frame) -> None:
         # 申請者情報（2 列）
@@ -273,6 +282,7 @@ class App:
             receipt_root=self.root_var.get().strip(),
             gmail_address=self.gmail_addr.get().strip(),
             gmail_app_password=self.gmail_pw.get().replace(" ", ""),
+            magokoro_phone=self.magokoro_phone.get().strip(),
             browser_channel=self.s.browser_channel,
             apply_url=self.url_var.get().strip(),
             step2_mode=self.mode.get(),
@@ -340,8 +350,6 @@ class App:
             return messagebox.showwarning("入力エラー", "対象年月は YYYYMM 形式（例: 202610）で入力してください。")
         if not vendors:
             return messagebox.showwarning("入力エラー", "対象サイトを 1 つ以上選んでください。")
-        if not s.gmail_address or not s.gmail_app_password:
-            return messagebox.showwarning("入力エラー", "Gmail アドレスとアプリ パスワードを入力してください。")
         overwrite, show = self.overwrite.get(), self.show_browser.get()
 
         def task():

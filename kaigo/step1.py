@@ -13,7 +13,7 @@ from pathlib import Path
 from .settings import Settings
 from .extract import magokoro_order_number, normalize, url_after
 from .mail import GmailImap, Mail
-from .receipts import ReceiptInfo, parse_homecare, parse_magokoro, pdf_text
+from .receipts import ReceiptInfo, parse_homecare, parse_magokoro, pdf_text, receipt_files
 from .vendors import VENDORS, Vendor
 
 JST = timezone(timedelta(hours=9))
@@ -28,7 +28,7 @@ class Result:
     subject: str
     receipt_date: str | None = None  # YYYYMMDD
     amount: int | None = None
-    status: str = "ok"  # ok / skipped / error
+    status: str = "ok"  # ok / skipped（既存）/ renamed（フォルダ内の PDF をリネーム）/ error
     error: str | None = None
 
 
@@ -83,6 +83,7 @@ def process(
     mails_by_vendor: dict[str, list[Mail]],
     browser_factory,
     overwrite: bool = False,
+    magokoro_phone: str = "",
 ) -> list[Result]:
     """メールごとに領収書を保存する。browser_factory(headless) は BrowserContext を返す。"""
     from .web import download_magokoro_receipt, save_homecare_receipt
@@ -113,7 +114,9 @@ def process(
                     url = url_after(mail.bodies, "納品書ダウンロード用URL")
                     if not order_no or not url:
                         raise RuntimeError(f"注文番号({order_no}) または 納品書URL({url}) が見つかりません")
-                    download_magokoro_receipt(browser_factory(None), url, order_no, dest)
+                    if not magokoro_phone:
+                        raise RuntimeError("まごころ用の電話番号が未入力です（Step1 画面で入力してください）")
+                    download_magokoro_receipt(browser_factory(None), url, order_no, magokoro_phone, dest)
                     info = parse_magokoro(pdf_text(dest))
                 r.receipt_date, r.amount = info.date, info.amount
                 if info.date is None or info.amount is None:
@@ -124,6 +127,47 @@ def process(
                 traceback.print_exc()
             results.append(r)
     return results
+
+
+def other_pdfs(folder: Path) -> list[Path]:
+    """領収書の命名規則に当てはまらない PDF（手動ダウンロードしたもの等）を古い順に返す。"""
+    prefixes = tuple(f"{v.file_prefix}_" for v in VENDORS.values())
+    pdfs = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() == ".pdf"
+            and not f.name.startswith(prefixes)]
+    return sorted(pdfs, key=lambda f: (f.stat().st_mtime, f.name))
+
+
+def prepare(folder: Path, ym: str, vendor_keys: list[str], overwrite: bool = False) -> tuple[list[Result], list[str]]:
+    """フォルダ内の既存ファイルで済む業者を処理し、(結果, メール取得が必要な業者) を返す。
+
+    - 命名規則どおりのファイルが既にあれば、その業者は終了（取り直さない）
+    - まごころ: 無ければ、フォルダ内のそれ以外の PDF を「領収書まごころ_YYYYMM.pdf」にリネーム
+    """
+    results: list[Result] = []
+    need_mail: list[str] = []
+    for key in vendor_keys:
+        vendor = VENDORS[key]
+        existing = receipt_files(folder, vendor.file_prefix, ym)
+        if existing and not overwrite:
+            for f in existing:
+                print(f"[{vendor.label}] 既にあるため終了: {f.name}")
+                results.append(_existing_result(key, f, "skipped"))
+            continue
+        if key == "magokoro" and not overwrite and (others := other_pdfs(folder)):
+            for src, name in zip(others, file_names(vendor, ym, len(others))):
+                dest = folder / name
+                src.rename(dest)
+                print(f"[{vendor.label}] フォルダ内の PDF をリネーム: {src.name} → {name}")
+                results.append(_existing_result(key, dest, "renamed"))
+            continue
+        need_mail.append(key)
+    return results, need_mail
+
+
+def _existing_result(key: str, path: Path, status: str) -> Result:
+    info = _parse_existing(key, path)
+    return Result(vendor=key, file=path.name, mail_date="", subject="", receipt_date=info.date,
+                  amount=info.amount, status=status)
 
 
 def _parse_existing(key: str, path: Path) -> ReceiptInfo:
@@ -145,20 +189,37 @@ def print_summary(results: list[Result]) -> None:
     print("\n==== 結果 ====")
     for r in results:
         amount = f"{r.amount:,}円" if r.amount is not None else "金額不明"
-        mark = {"ok": "○", "skipped": "－(既存)", "error": "×"}[r.status]
+        mark = {"ok": "○", "skipped": "－(既存)", "renamed": "○(リネーム)", "error": "×"}[r.status]
         print(f"{mark} {r.file}  日付:{r.receipt_date or '不明'}  {amount}" + (f"  {r.error}" if r.error else ""))
     total = sum(r.amount or 0 for r in results if r.status != "error")
     print(f"合計: {total:,}円")
 
 
 def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False, show_browser: bool = False) -> int:
+    month_range(ym)  # 形式チェック
     folder = Path(cfg.receipt_root) / ym
-    folder.mkdir(parents=True, exist_ok=True)
-    print(f"保存先: {folder}")
+    if folder.is_dir():
+        print(f"既存のフォルダを使います: {folder}")
+    else:
+        folder.mkdir(parents=True)
+        print(f"フォルダを作成しました: {folder}")
 
-    print("Gmail を検索しています...")
-    mails = fetch_mails(cfg, ym, vendor_keys)
+    results, need_mail = prepare(folder, ym, vendor_keys, overwrite)
+    if need_mail:
+        if not cfg.gmail_address or not cfg.gmail_app_password:
+            print("× Gmail アドレスとアプリ パスワードを入力してください（メールからの取得に必要です）")
+            return 1
+        print("Gmail を検索しています...")
+        mails = fetch_mails(cfg, ym, need_mail)
+        results += _download(cfg, folder, ym, mails, overwrite, show_browser)
 
+    summary = write_summary(folder, ym, results)
+    print_summary(results)
+    print(f"\n読み取り結果: {summary}")
+    return 1 if any(r.status == "error" for r in results) else 0
+
+
+def _download(cfg: Settings, folder: Path, ym: str, mails, overwrite: bool, show_browser: bool) -> list[Result]:
     from playwright.sync_api import sync_playwright
 
     with ExitStack() as stack:
@@ -166,7 +227,7 @@ def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False,
         contexts: dict[bool, object] = {}
 
         def browser_factory(headless: bool | None):
-            # PDF 印刷はヘッドレス必須。None はダウンロード用で、--show-browser 時のみ画面表示
+            # PDF 印刷はヘッドレス必須。None はダウンロード用で、show_browser 時のみ画面表示
             nonlocal pw
             headless = (not show_browser) if headless is None else headless
             if headless not in contexts:
@@ -177,9 +238,4 @@ def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False,
                 contexts[headless] = browser.new_context(accept_downloads=True, locale="ja-JP")
             return contexts[headless]
 
-        results = process(folder, ym, mails, browser_factory, overwrite=overwrite)
-
-    summary = write_summary(folder, ym, results)
-    print_summary(results)
-    print(f"\n読み取り結果: {summary}")
-    return 1 if any(r.status == "error" for r in results) else 0
+        return process(folder, ym, mails, browser_factory, overwrite=overwrite, magokoro_phone=cfg.magokoro_phone)

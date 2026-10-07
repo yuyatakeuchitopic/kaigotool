@@ -36,12 +36,13 @@ HOMECARE_HTML = """<html><body><h1>納品書 兼 お買上明細書</h1><table>
 <tr><td>合計金額</td><td>9,710円</td><td>883円</td></tr></table>
 <p>■ご 注 文 日 ：2026 年09 月02 日</p></body></html>"""
 
-MAGOKORO_FORM = """<html><body><form action="/magokoro/issue" method="get">
+MAGOKORO_FORM = """<html><body><form action="/magokoro/login" method="get">
 <label for="o">注文番号</label><input id="o" name="order" type="text">
-<button type="submit">発行する</button></form></body></html>"""
+<label for="t">電話番号</label><input id="t" name="tel" type="text">
+<button type="submit">ログイン</button></form></body></html>"""
 
-MAGOKORO_CONFIRM = """<html><body><p>注文番号 {order} の納品書を発行します</p>
-<a href="/magokoro/file?order={order}"><button type="button">確認</button></a></body></html>"""
+MAGOKORO_MYPAGE = """<html><body><p>注文番号 {order}</p>
+<a href="/magokoro/file?order={order}"><button type="button">領収書・納品書を発行する</button></a></body></html>"""
 
 
 @pytest.fixture(scope="module")
@@ -68,9 +69,9 @@ def site():
                 self._send(HOMECARE_HTML.encode(), "text/html; charset=utf-8")
             elif u.path == "/magokoro":
                 self._send(MAGOKORO_FORM.encode(), "text/html; charset=utf-8")
-            elif u.path == "/magokoro/issue":
-                seen["order"] = q.get("order")
-                self._send(MAGOKORO_CONFIRM.format(order=q.get("order")).encode(), "text/html; charset=utf-8")
+            elif u.path == "/magokoro/login":
+                seen["order"], seen["tel"] = q.get("order"), q.get("tel")
+                self._send(MAGOKORO_MYPAGE.format(order=q.get("order")).encode(), "text/html; charset=utf-8")
             elif u.path == "/magokoro/file":
                 self._send(pdf, "application/pdf", {"Content-Disposition": 'attachment; filename="d.pdf"'})
             else:
@@ -100,7 +101,7 @@ def test_step1_process_with_mock_site(site, tmp_path):
     with sync_playwright() as p:
         browser = p.chromium.launch(**LAUNCH)
         ctx = browser.new_context(accept_downloads=True)
-        results = process(tmp_path, "202609", mails, lambda headless: ctx)
+        results = process(tmp_path, "202609", mails, lambda headless: ctx, magokoro_phone="09000000000")
         browser.close()
 
     assert [r.status for r in results] == ["ok", "ok", "ok"]
@@ -109,7 +110,7 @@ def test_step1_process_with_mock_site(site, tmp_path):
     ]
     assert (results[0].receipt_date, results[0].amount) == ("20260902", 9710)
     assert (results[1].receipt_date, results[1].amount) == ("20260901", 8426)
-    assert seen["order"] == "P200000000000000001"
+    assert seen["order"] == "P200000000000000001" and seen["tel"] == "09000000000"
     for r in results:
         assert (tmp_path / r.file).read_bytes().startswith(b"%PDF")
 

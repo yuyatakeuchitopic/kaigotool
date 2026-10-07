@@ -27,9 +27,10 @@ def save_homecare_receipt(context: BrowserContext, url: str, dest: Path) -> Rece
 
 
 def download_magokoro_receipt(
-    context: BrowserContext, url: str, order_no: str, dest: Path, timeout_ms: int = 30_000
+    context: BrowserContext, url: str, order_no: str, phone: str, dest: Path, timeout_ms: int = 30_000
 ) -> None:
-    """納品書ダウンロードページで注文番号を入力し、PDF をダウンロードして dest に保存する。"""
+    """納品書ダウンロードページで 注文番号・電話番号 を入力してログインし、
+    「領収書・納品書を発行する」で PDF をダウンロードして dest に保存する。"""
     page = context.new_page()
     downloads: list[Download] = []
     popups: list[Page] = []
@@ -40,19 +41,23 @@ def download_magokoro_receipt(
     def on_page(p: Page) -> None:
         popups.append(p)
 
+    def got_file():
+        return downloads or _pdf_popup(popups)
+
     page.on("download", on_download)
     page.on("dialog", lambda d: d.accept())  # JavaScript の確認ダイアログは OK
     context.on("page", on_page)
     try:
         page.goto(url, wait_until="domcontentloaded")
         find_visible(page, _order_inputs(page), timeout_ms, "注文番号の入力欄").fill(order_no)
-        find_visible(page, buttons(page, ["発行する"]), timeout_ms, "「発行する」ボタン").click()
+        find_visible(page, _phone_inputs(page), timeout_ms, "電話番号の入力欄").fill(phone)
+        find_visible(page, buttons(page, ["ログイン"]), timeout_ms, "「ログイン」ボタン").click()
+        find_visible(
+            page, buttons(page, ["領収書・納品書を発行する"]), timeout_ms, "「領収書・納品書を発行する」ボタン"
+        ).click()
 
-        # 「発行する」で直接ダウンロードされない場合は「確認」「発行」を押す
-        if not _wait(page, lambda: downloads or _pdf_popup(popups), 5_000):
-            find_visible(page, buttons(page, ["確認", "発行"]), timeout_ms, "「確認」/「発行」ボタン").click()
-            if not _wait(page, lambda: downloads or _pdf_popup(popups), timeout_ms):
-                raise RuntimeError("納品書ファイルのダウンロードを検出できませんでした")
+        if not _wait(page, got_file, timeout_ms):
+            raise RuntimeError("領収書・納品書ファイルのダウンロードを検出できませんでした")
 
         if downloads:
             downloads[0].save_as(dest)
@@ -75,7 +80,16 @@ def _order_inputs(page: Page) -> list[Locator]:
         page.get_by_label(re.compile("注文番号")),
         page.get_by_placeholder(re.compile("注文番号|P\\d")),
         page.locator("input[name*='order' i], input[id*='order' i]"),
-        page.locator("input[type='text'], input:not([type])"),
+        page.locator("input[type='text'], input:not([type])").first,
+    ]
+
+
+def _phone_inputs(page: Page) -> list[Locator]:
+    return [
+        page.get_by_label(re.compile("電話番号")),
+        page.get_by_placeholder(re.compile("電話番号|0\\d{9}")),
+        page.locator("input[type='tel'], input[name*='tel' i], input[id*='tel' i], input[name*='phone' i]"),
+        page.locator("input[type='text'], input:not([type])").nth(1),
     ]
 
 

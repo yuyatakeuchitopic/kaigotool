@@ -73,6 +73,15 @@ def _receipt_file_re(prefix: str, ym: str) -> re.Pattern:
     return re.compile(rf"^{re.escape(prefix)}_{ym}(?:_(\d+))?\s*\.pdf$", re.IGNORECASE)
 
 
+def receipt_files(folder: Path, prefix: str, ym: str) -> list[Path]:
+    """命名規則どおりのファイル（連番順）。"""
+    if not folder.is_dir():
+        return []
+    pat = _receipt_file_re(prefix, ym)
+    hits = [(int(m.group(1) or 0), f) for f in folder.iterdir() if (m := pat.match(f.name))]
+    return [f for _, f in sorted(hits)]
+
+
 def find_receipts(folder: Path, ym: str) -> list[Receipt]:
     """YYYYMM フォルダから命名規則どおりの領収書 PDF を探して読み取る。
 
@@ -81,14 +90,11 @@ def find_receipts(folder: Path, ym: str) -> list[Receipt]:
     from .vendors import VENDORS
 
     parsers = {"homecare": parse_homecare, "magokoro": parse_magokoro}
-    files = sorted(folder.iterdir()) if folder.is_dir() else []
-    out: list[Receipt] = []
-    for key, vendor in VENDORS.items():
-        pat = _receipt_file_re(vendor.file_prefix, ym)
-        hits = [(int(m.group(1) or 0), f) for f in files if (m := pat.match(f.name))]
-        for _, f in sorted(hits):
-            out.append(_read_receipt(key, f, parsers[key]))
-    return out
+    return [
+        _read_receipt(key, f, parsers[key])
+        for key, vendor in VENDORS.items()
+        for f in receipt_files(folder, vendor.file_prefix, ym)
+    ]
 
 
 def _read_receipt(key: str, path: Path, parser) -> Receipt:
