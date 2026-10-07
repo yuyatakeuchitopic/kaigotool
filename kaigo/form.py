@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from .settings import Application
 
@@ -15,9 +16,10 @@ SLOT_MARKS = "①②③④⑤⑥⑦⑧⑨⑩"
 
 @dataclass
 class Field:
-    kind: str  # text / select / radio
+    kind: str  # text / select / radio / file
     label: str  # 画面上の項目名（の一部）
-    value: str
+    value: str  # file の場合は表示用のファイル名一覧
+    files: tuple[str, ...] = ()  # file の場合に添付するファイル
 
 
 @dataclass
@@ -29,7 +31,21 @@ class Slot:
     date: str  # 領収書発行年月日 YYYYMMDD
 
 
-def build_fields(app: Application, slots: list[Slot], total: str) -> list[Field]:
+RECEIPT_ATTACH_LABEL = "①領収書・明細書"
+INSURANCE_ATTACH_LABEL = "介護保険証（介護保険被保険者証）の写し"
+
+
+def file_field(label: str, files: list[Path]) -> Field:
+    return Field("file", label, "、".join(f.name for f in files), tuple(str(f) for f in files))
+
+
+def build_fields(
+    app: Application,
+    slots: list[Slot],
+    total: str,
+    receipt_files: list[Path] = (),
+    insurance_files: list[Path] = (),
+) -> list[Field]:
     """入力する項目の一覧。空欄の項目は入力しない（サイト側の値のまま）。"""
     slots = [s for s in slots if s.menu_no or s.menu_name or s.date]
     if len(slots) > len(SLOT_MARKS):
@@ -62,8 +78,10 @@ def build_fields(app: Application, slots: list[Slot], total: str) -> list[Field]
         Field("text", "ｺｳｻﾞﾒｲｷﾞﾆﾝ", app.account_holder),
         Field("radio", "不備の場合は、WEB申請はメールで案内", "はい"),
         Field("radio", "申込合計金額・お支払い金額が0円と表示されます", "はい"),
+        file_field(RECEIPT_ATTACH_LABEL, list(receipt_files)),
+        file_field(INSURANCE_ATTACH_LABEL, list(insurance_files)),
     ]
-    return [f for f in fields if f.value.strip()]
+    return [f for f in fields if f.value.strip()]  # 空欄・添付なしは入力しない
 
 
 # label の後ろにある入力欄に data-kaigo-target を付ける。見つからなければ理由を返す。
@@ -97,6 +115,17 @@ _MARK_JS = r"""
     const v = norm(value);
     target = group.find(r => textOf(r) === v) || group.find(r => textOf(r).startsWith(v));
     if (!target) return 'option-not-found';
+  } else if (kind === 'file') {
+    // 「ファイルを選択」ボタンの裏にある input[type=file]（非表示でも可）
+    target = Array.from(document.querySelectorAll('input[type=file]')).find(after);
+    if (!target) {
+      const btn = Array.from(document.querySelectorAll('button, a, label, [role=button], input[type=button]'))
+        .filter(after).find(b => norm(b.innerText || b.value).includes(norm('ファイルを選択')));
+      if (!btn) return 'control-not-found';
+      btn.setAttribute('data-kaigo-target', '1');
+      return 'chooser';
+    }
+    target.setAttribute('data-kaigo-multiple', target.multiple ? '1' : '0');
   } else {
     const sel = kind === 'select' ? 'select' :
       'input:not([type=hidden]):not([type=radio]):not([type=checkbox]):not([type=submit]):not([type=button]), textarea';
@@ -127,10 +156,14 @@ def fill_fields(page, fields: list[Field]) -> list[tuple[Field, str]]:
     failures: list[tuple[Field, str]] = []
     for f in fields:
         try:
+            if f.kind == "file":
+                err = _upload(page, f)
+                if err:
+                    failures.append((f, err))
+                continue
             status = page.evaluate(_MARK_JS, [f.label, f.kind, f.value])
             if status != "ok":
-                head, _, detail = status.partition(":")
-                failures.append((f, _REASONS.get(head, head) + (f"（選択肢: {detail}）" if detail else "")))
+                failures.append((f, _reason(status)))
                 continue
             el = page.locator("[data-kaigo-target]").first
             el.scroll_into_view_if_needed()
@@ -140,6 +173,44 @@ def fill_fields(page, fields: list[Field]) -> list[tuple[Field, str]]:
                 el.select_option(value=el.get_attribute("data-kaigo-option"))
             else:
                 el.check(force=True)
+                if not el.is_checked():
+                    failures.append((f, "チェックを入れられませんでした"))
         except Exception as e:
             failures.append((f, f"入力エラー: {e}"))
     return failures
+
+
+def _reason(status: str) -> str:
+    head, _, detail = status.partition(":")
+    return _REASONS.get(head, head) + (f"（選択肢: {detail}）" if detail else "")
+
+
+def _upload(page, f: Field) -> str | None:
+    """添付ファイルを選択する。1 回で複数選べない欄には 1 ファイルずつ選ぶ。"""
+    pending = list(f.files)
+    while pending:
+        status = page.evaluate(_MARK_JS, [f.label, "file", ""])
+        if status not in ("ok", "chooser"):
+            return _reason(status)
+        el = page.locator("[data-kaigo-target]").first
+        multiple = status == "ok" and el.get_attribute("data-kaigo-multiple") == "1"
+        batch = pending if multiple else pending[:1]
+        if status == "chooser":
+            el.scroll_into_view_if_needed()
+            with page.expect_file_chooser() as fc:
+                el.click()
+            fc.value.set_files(batch)
+        else:
+            el.set_input_files(batch)
+        pending = pending[len(batch):]
+        _settle(page)
+    return None
+
+
+def _settle(page) -> None:
+    """アップロード処理の完了を少し待つ。"""
+    try:
+        page.wait_for_load_state("networkidle", timeout=10_000)
+    except Exception:
+        pass
+    page.wait_for_timeout(1000)

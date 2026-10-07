@@ -11,6 +11,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
+from . import attachments
 from .form import SLOT_MARKS, Field, Slot, build_fields
 from .inputs import YM_RE, month_choices, parse_amount, parse_date
 from .receipts import find_receipts
@@ -76,7 +77,7 @@ class App:
 
         logf = ttk.LabelFrame(self.root, text="ログ", padding=4)
         logf.pack(fill="both", padx=12, pady=(0, 12))
-        self.log = tk.Text(logf, height=9, state="disabled", wrap="word")
+        self.log = tk.Text(logf, height=6, state="disabled", wrap="word")
         sb = ttk.Scrollbar(logf, command=self.log.yview)
         self.log.configure(yscrollcommand=sb.set)
         self.log.pack(side="left", fill="both", expand=True)
@@ -204,6 +205,20 @@ class App:
         self.total_hint = tk.StringVar()
         ttk.Label(totf, textvariable=self.total_hint, foreground="gray").pack(side="left", padx=8)
 
+        # ファイル添付
+        af = ttk.LabelFrame(f, text="ファイル添付", padding=8)
+        af.pack(fill="x", pady=(8, 0))
+        self.attach_receipts = tk.BooleanVar(value=True)
+        self.attach_insurance = tk.BooleanVar(value=True)
+        ttk.Checkbutton(af, text="①領収書・明細書: 対象年月フォルダの PDF をすべて添付",
+                        variable=self.attach_receipts).grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(af, text="介護保険証の写し: 次のフォルダの PDF を添付",
+                        variable=self.attach_insurance).grid(row=1, column=0, sticky="w")
+        self.attach_dir_var = tk.StringVar(value=self.s.attachments_dir)
+        ttk.Entry(af, textvariable=self.attach_dir_var, width=60).grid(row=1, column=1, sticky="ew", padx=4)
+        ttk.Button(af, text="参照", command=lambda: self._browse_into(self.attach_dir_var)).grid(row=1, column=2)
+        af.columnconfigure(1, weight=1)
+
         bf = ttk.Frame(f)
         bf.pack(anchor="w", pady=(10, 0))
         ttk.Button(bf, text="① 申請用 Edge を開く", command=self.open_edge).pack(side="left")
@@ -292,6 +307,7 @@ class App:
             magokoro_phone=self.magokoro_phone.get().strip(),
             browser_channel=self.s.browser_channel,
             apply_url=self.url_var.get().strip(),
+            attachments_dir=self.attach_dir_var.get().strip(),
             step2_mode=self.mode.get(),
             application=Application(**{k: v.get().strip() for k, v in self.app_vars.items()}),
         )
@@ -328,7 +344,26 @@ class App:
             raw = getattr(s.application, key)
             if raw and parse_date(raw) is None:
                 raise ValueError(f"{APPLICATION_LABELS[key]} を YYYYMMDD で入力してください: {raw}")
-        return build_fields(s.application, slots, total)
+        receipt_files, insurance_files, _ = self.attachments()
+        return build_fields(s.application, slots, total, receipt_files, insurance_files)
+
+    def receipt_folder(self) -> Path | None:
+        ym = self.month2.get().strip()
+        return Path(self.root_var.get().strip()) / ym if YM_RE.match(ym) else None
+
+    def attachments(self) -> tuple[list[Path], list[Path], list[str]]:
+        """(①領収書・明細書の添付, 介護保険証の写しの添付, 添付しないファイルの理由)。"""
+        notes: list[str] = []
+        receipt_files: list[Path] = []
+        insurance_files: list[Path] = []
+        folder = self.receipt_folder()
+        if self.attach_receipts.get() and folder is not None:
+            receipt_files, n = attachments.pick(attachments.folder_pdfs(folder))
+            notes += n
+        if self.attach_insurance.get() and self.attach_dir_var.get().strip():
+            insurance_files, n = attachments.pick(attachments.folder_pdfs(Path(self.attach_dir_var.get().strip())))
+            notes += n
+        return receipt_files, insurance_files, notes
 
     def missing_items(self) -> list[str]:
         out = [APPLICATION_LABELS[k] for k, v in self.app_vars.items() if not v.get().strip()]
@@ -336,6 +371,11 @@ class App:
             out.append("領収書（発行年月日）")
         if not self.total_var.get().strip():
             out.append("ご申請合計金額")
+        receipt_files, insurance_files, _ = self.attachments()
+        if self.attach_receipts.get() and not receipt_files:
+            out.append(f"①領収書・明細書の添付（{self.receipt_folder()} に PDF がありません）")
+        if self.attach_insurance.get() and not insurance_files:
+            out.append(f"介護保険証の写しの添付（{self.attach_dir_var.get().strip()} に PDF がありません）")
         return out
 
     # ------------------------------------------------------------------ 操作
@@ -345,9 +385,12 @@ class App:
         self.status_var.set(f"保存しました（{path}）")
 
     def _browse(self) -> None:
-        d = filedialog.askdirectory(initialdir=self.root_var.get() or None)
+        self._browse_into(self.root_var)
+
+    def _browse_into(self, var: tk.StringVar) -> None:
+        d = filedialog.askdirectory(initialdir=var.get() or None)
         if d:
-            self.root_var.set(str(Path(d)))
+            var.set(str(Path(d)))
 
     def run_step1(self) -> None:
         ym = self.month1.get().strip()
@@ -383,6 +426,8 @@ class App:
         ):
             return
         url = self.url_var.get().strip()
+        for note in self.attachments()[2]:
+            self._log(f"※ {note}\n")
 
         def task():
             from .step2 import fill_open_window

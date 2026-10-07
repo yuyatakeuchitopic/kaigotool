@@ -115,3 +115,33 @@ def test_background_task_output_goes_to_log(app):
     assert done == [0] and not app.busy
     assert "処理中です" in app.log.get("1.0", "end")
     assert str(app.run2_btn["state"]) == "normal"
+
+
+def test_attachments_from_month_folder_and_saved_dir(app, tmp_path):
+    month = tmp_path / "receipts" / "202610"
+    month.mkdir(parents=True)
+    (month / "領収書まごころ_202610.pdf").write_bytes(b"%PDF")
+    every = tmp_path / "毎回添付物"
+    every.mkdir()
+    (every / "保険証.pdf").write_bytes(b"%PDF")
+    app.month2.set("202610")
+    app.attach_dir_var.set(str(every))
+    app.slots[1]["date"].set("20261001")
+    app.slots[1]["amount"].set("8426")
+    files = {f.label: f.files for f in app.step2_fields() if f.kind == "file"}
+    assert [Path(p).name for p in files["①領収書・明細書"]] == ["領収書まごころ_202610.pdf"]
+    assert [Path(p).name for p in files["介護保険証（介護保険被保険者証）の写し"]] == ["保険証.pdf"]
+
+    app.attach_insurance.set(False)
+    assert "介護保険証（介護保険被保険者証）の写し" not in {f.label for f in app.step2_fields()}
+
+    app.save()
+    assert load_settings(tmp_path / "settings.json").attachments_dir == str(every)
+
+
+def test_missing_attachments_are_reported(app, tmp_path):
+    app.month2.set("202610")
+    app.attach_dir_var.set(str(tmp_path / "none"))
+    missing = app.missing_items()
+    assert any("①領収書・明細書の添付" in m for m in missing)
+    assert any("介護保険証の写しの添付" in m for m in missing)

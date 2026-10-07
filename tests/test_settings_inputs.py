@@ -64,3 +64,17 @@ def test_find_receipts_naming_rules(tmp_path):
     ]
     assert all(r.date is None and r.note for r in found)
     assert find_receipts(Path(tmp_path / "nofolder"), "202610") == []
+
+
+def test_attachment_selection(tmp_path):
+    from kaigo import attachments
+
+    for name in ["メモ.pdf", "領収書まごころ_202610.pdf", "領収書ホームケア_202610.pdf", "a.txt"]:
+        (tmp_path / name).write_bytes(b"%PDF")
+    (tmp_path / "big.pdf").write_bytes(b"0" * (attachments.MAX_BYTES + 1))
+    files = attachments.folder_pdfs(tmp_path)
+    assert [f.name for f in files] == ["領収書ホームケア_202610.pdf", "領収書まごころ_202610.pdf", "big.pdf", "メモ.pdf"]
+    ok, notes = attachments.pick(files)
+    assert [f.name for f in ok] == ["領収書ホームケア_202610.pdf", "領収書まごころ_202610.pdf", "メモ.pdf"]
+    assert len(notes) == 1 and "5MB" in notes[0]
+    assert attachments.folder_pdfs(tmp_path / "none") == []

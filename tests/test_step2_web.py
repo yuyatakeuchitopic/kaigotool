@@ -56,6 +56,22 @@ FORM = "".join([
     _text("口座番号", "anum"), _text("ｺｳｻﾞﾒｲｷﾞﾆﾝ", "aholder"),
     _radio("不備の場合は、WEB申請はメールで案内・郵送申請は電話で案内いたします。", "defect"),
     _radio("ご入力の最終画面にて、申込合計金額・お支払い金額が0円と表示されますがご申請金額・補助金額とは関係の無い表記となります。", "zero"),
+    # ファイル添付（実画面に合わせた模擬）
+    "<h3>ファイル添付</h3>",
+    # ①: 非表示の複数選択 input + 「ファイルを選択」ボタン
+    '<div>①領収書・明細書 <span>必須</span></div>'
+    '<input type="file" id="f1" multiple style="display:none" '
+    'onchange="document.getElementById(\'up1\').textContent=[...this.files].map(f=>f.name).join(\'|\')">'
+    '<button type="button" onclick="document.getElementById(\'f1\').click()">ファイルを選択</button>'
+    '<p>※ファイルサイズは1ファイルあたり5MBまで</p><span id="up1"></span>',
+    '<div>②領収書・明細書</div><input type="file" id="f2" style="display:none">'
+    '<button type="button">ファイルを選択</button><span id="up2"></span>',
+    # 介護保険証: クリック時に input を作る（1 回 1 ファイル、選ぶたびに一覧へ追加）
+    '<div>介護保険証（介護保険被保険者証）の写し</div>'
+    '<button type="button" id="b3" onclick="const i=document.createElement(\'input\');i.type=\'file\';'
+    'i.onchange=()=>{document.getElementById(\'up3\').textContent+=i.files[0].name+\'|\'};i.click()">ファイルを選択</button>'
+    '<span id="up3"></span>',
+    '<div>続柄証明（関係証明）</div><button type="button">ファイルを選択</button>',
     "<button>次へ</button></body></html>",
 ])
 
@@ -94,7 +110,7 @@ SLOTS = [
 
 
 VALUES_JS = """() => Object.fromEntries(Array.from(document.querySelectorAll('input,select'))
-    .filter(e => e.type !== 'radio' || e.checked)
+    .filter(e => e.type !== 'file' && (e.type !== 'radio' || e.checked))
     .map(e => [e.name, e.tagName === 'SELECT' ? e.options[e.selectedIndex].text : e.value]))"""
 
 
@@ -174,3 +190,27 @@ def test_attach_to_already_open_browser(site, tmp_path, monkeypatch):
 def test_attach_reports_when_no_browser(capsys):
     assert fill_open_window("https://example.com/", [], port=_free_port()) == 1
     assert "申請用の Edge に接続できません" in capsys.readouterr().out
+
+
+UPLOADED_JS = "() => ['up1', 'up2', 'up3'].map(id => document.getElementById(id).textContent)"
+
+
+def test_attachments_are_uploaded(site, tmp_path):
+    r1, r2, ins = tmp_path / "領収書ホームケア_202610.pdf", tmp_path / "領収書まごころ_202610.pdf", tmp_path / "保険証.pdf"
+    for f in (r1, r2, ins):
+        f.write_bytes(b"%PDF-1.4 dummy")
+    fields = build_fields(APP, SLOTS, "18136", [r1, r2], [ins])
+    with sync_playwright() as p:
+        browser = p.chromium.launch(**LAUNCH)
+        page = browser.new_page()
+        page.goto(f"{site}/form")
+        failures = fill_page(page, fields)
+        uploaded = page.evaluate(UPLOADED_JS)
+        browser.close()
+    assert failures == []
+    assert uploaded == ["領収書ホームケア_202610.pdf|領収書まごころ_202610.pdf", "", "保険証.pdf|"]
+
+
+def test_no_attachments_leaves_file_fields_alone(site):
+    fields = build_fields(APP, SLOTS, "18136")
+    assert not any(f.kind == "file" for f in fields)

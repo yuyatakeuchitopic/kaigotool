@@ -63,6 +63,7 @@ class Settings:
     magokoro_phone: str = ""  # まごころ納品書ページのログインに使う電話番号
     browser_channel: str = "msedge"
     apply_url: str = DEFAULT_APPLY_URL
+    attachments_dir: str = DEFAULT_RECEIPT_ROOT + "\\毎回添付物"  # 介護保険証の写し等（毎回添付）
     step2_mode: str = "pdf"  # pdf: PDF から読み取り / manual: 画面の入力内容のみ
     application: Application = field(default_factory=Application)
 

@@ -89,6 +89,13 @@ def fill_open_window(url: str, fields: list[Field], port: int = CDP_PORT) -> int
     """「申請用 Edge を開く」で開いた Edge に接続して入力する。Edge は開いたまま残す。"""
     from playwright.sync_api import sync_playwright
 
+    print("入力する内容:")
+    for f in fields:
+        if f.kind == "file":
+            print(f"  [添付] {f.label}: {f.value}")
+        elif f.kind != "radio":
+            print(f"  {f.label}: {f.value}")
+
     host = urlparse(url).hostname or ""
     with sync_playwright() as pw:
         try:
