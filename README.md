@@ -9,17 +9,24 @@ Step2 は Step1 と独立して使えます。
 
 ## 起動（Windows）
 
+ツールの置き場所: `C:\アプリケーション\kaigotool-claude-kaigo-insurance-automation-h38m9n`
+
+
 フォルダ内の **`start.bat` をダブルクリック**してください。
 
 - 初回だけ、このフォルダに専用の Python 環境（`.venv`）を作ってライブラリを入れます（数分）。
   uv で入れた Python は直接ライブラリを入れられない（externally-managed-environment エラー）ため、この方式にしています。
 - 2 回目以降はすぐ画面が開きます。
+- フォルダごと移動した後や、新しい版で起動時にエラーが出る場合は、フォルダ内の `.venv` を削除してから
+  `start.bat` を実行してください（専用環境を作り直します）。
+- 設定（申請者情報など）と申請用 Edge のログイン状態は `%LOCALAPPDATA%\kaigotool` に保存されるため、
+  ツールのフォルダを移動・入れ替えても引き継がれます。
 - ブラウザはインストール済みの Edge を使うので `playwright install` は不要です。
 
 VS Code のターミナルから手動で行う場合:
 
 ```
-cd C:\Users\you50\Downloads\kaigotool-claude-kaigo-insurance-automation-h38m9n
+cd "C:\アプリケーション\kaigotool-claude-kaigo-insurance-automation-h38m9n"
 & C:\Users\you50\.local\bin\python3.14.exe -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\python.exe app.py
