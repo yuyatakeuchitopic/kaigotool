@@ -61,7 +61,9 @@ FORM = "".join([
     # ①: 非表示の複数選択 input + 「ファイルを選択」ボタン
     '<div>①領収書・明細書 <span>必須</span></div>'
     '<input type="file" id="f1" multiple style="display:none" '
-    'onchange="document.getElementById(\'up1\').textContent=[...this.files].map(f=>f.name).join(\'|\')">'
+    # 実サイト同様、添付すると画面が再描画されラジオボタンが外れる
+    'onchange="document.getElementById(\'up1\').textContent=[...this.files].map(f=>f.name).join(\'|\');'
+    'document.querySelectorAll(\'input[type=radio]\').forEach(r=>r.checked=false)">'
     '<button type="button" onclick="document.getElementById(\'f1\').click()">ファイルを選択</button>'
     '<p>※ファイルサイズは1ファイルあたり5MBまで</p><span id="up1"></span>',
     '<div>②領収書・明細書</div><input type="file" id="f2" style="display:none">'
@@ -206,9 +208,12 @@ def test_attachments_are_uploaded(site, tmp_path):
         page.goto(f"{site}/form")
         failures = fill_page(page, fields)
         uploaded = page.evaluate(UPLOADED_JS)
+        values = page.evaluate(VALUES_JS)
         browser.close()
     assert failures == []
     assert uploaded == ["領収書ホームケア_202610.pdf|領収書まごころ_202610.pdf", "", "保険証.pdf|"]
+    # 添付で外れても、最後にラジオボタンが入っている
+    assert {k: values[k] for k in ("terms", "defect", "zero")} == {"terms": "1", "defect": "1", "zero": "1"}
 
 
 def test_no_attachments_leaves_file_fields_alone(site):

@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -74,12 +75,12 @@ def fill_page(page, fields: list[Field]) -> list:
 
 def _scroll_through(page) -> None:
     """遅延表示される項目があっても描画されるよう、一度最下部までスクロールする。"""
-    for _ in range(30):
+    for _ in range(15):
         at_bottom = page.evaluate(
-            "() => { window.scrollBy(0, window.innerHeight);"
+            "() => { window.scrollBy(0, window.innerHeight * 2);"
             " return window.innerHeight + window.scrollY >= document.body.scrollHeight - 2; }"
         )
-        page.wait_for_timeout(150)
+        page.wait_for_timeout(60)
         if at_bottom:
             break
     page.evaluate("() => window.scrollTo(0, 0)")
@@ -110,12 +111,14 @@ def fill_open_window(url: str, fields: list[Field], port: int = CDP_PORT) -> int
             print(f"× 申請用の Edge に {host} のページが開かれていません。ログインして申込プランの画面を開いてください。")
             return 1
         page.bring_to_front()
+        started = time.monotonic()
         try:
             failures = fill_page(page, fields)
         except Exception as e:
             print(f"× 自動入力を中断しました: {e}")
             return 1
     # ここで接続だけ切れる（Edge は開いたまま）
+    print(f"（入力にかかった時間: {time.monotonic() - started:.1f} 秒）")
 
     if failures:
         print("\n▲ 次の項目は自動入力できませんでした。ブラウザで入力してください:")

@@ -89,12 +89,23 @@ _MARK_JS = r"""
 ([label, kind, value]) => {
   const norm = s => (s || '').normalize('NFKC').replace(/\s+/g, '');
   const key = norm(label);
-  document.querySelectorAll('[data-kaigo-target]').forEach(e => e.removeAttribute('data-kaigo-target'));
+  document.querySelectorAll('[data-kaigo-target], [data-kaigo-click]').forEach(e => {
+    e.removeAttribute('data-kaigo-target');
+    e.removeAttribute('data-kaigo-click');
+  });
   const ownText = el => Array.from(el.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join('');
   const skip = new Set(['SCRIPT', 'STYLE', 'OPTION', 'SELECT', 'TEXTAREA', 'NOSCRIPT']);
   const visible = el => el.getClientRects().length > 0;
-  const hits = Array.from(document.body.querySelectorAll('*'))
-    .filter(el => !skip.has(el.tagName) && norm(ownText(el)).includes(key));
+  // 文字を持つ要素だけを（文書順に）調べる。全要素を調べるより速い
+  const hits = [];
+  const seen = new Set();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const el = walker.currentNode.parentElement;
+    if (!el || seen.has(el) || skip.has(el.tagName)) continue;
+    seen.add(el);
+    if (norm(ownText(el)).includes(key)) hits.push(el);
+  }
   // 入力欄の項目名は短い。説明文中の同じ語句より、短い表示中の要素を優先する
   const short = el => norm(ownText(el)).length <= key.length + 8;
   const anchor = kind === 'radio'
@@ -115,6 +126,10 @@ _MARK_JS = r"""
     const v = norm(value);
     target = group.find(r => textOf(r) === v) || group.find(r => textOf(r).startsWith(v));
     if (!target) return 'option-not-found';
+    // 画面上で押せる部分（ラベル）。人がクリックするのと同じ操作でサイト側にも選択が伝わる
+    const clickable = (target.labels && target.labels[0]) || target.closest('label') || target.parentElement;
+    if (clickable) clickable.setAttribute('data-kaigo-click', '1');
+    target.setAttribute('data-kaigo-checked', target.checked ? '1' : '0');
   } else if (kind === 'file') {
     // 「ファイルを選択」ボタンの裏にある input[type=file]（非表示でも可）
     target = Array.from(document.querySelectorAll('input[type=file]')).find(after);
@@ -152,32 +167,73 @@ _REASONS = {
 
 
 def fill_fields(page, fields: list[Field]) -> list[tuple[Field, str]]:
-    """フォームに入力する。入力できなかった項目と理由のリストを返す。"""
-    failures: list[tuple[Field, str]] = []
-    for f in fields:
+    """フォームに入力する。入力できなかった項目と理由のリストを返す。
+
+    添付 → 文字・プルダウン → ラジオボタン の順に入力する（添付で画面が再描画されても
+    ラジオボタンが外れないように）。最後にラジオボタンを確認し、外れていれば入れ直す。
+    """
+    failures: dict[int, tuple[Field, str]] = {}
+    files = [f for f in fields if f.kind == "file"]
+    radios = [f for f in fields if f.kind == "radio"]
+    others = [f for f in fields if f.kind not in ("file", "radio")]
+    for f in files + others + radios:
         try:
             if f.kind == "file":
                 err = _upload(page, f)
-                if err:
-                    failures.append((f, err))
-                continue
-            status = page.evaluate(_MARK_JS, [f.label, f.kind, f.value])
-            if status != "ok":
-                failures.append((f, _reason(status)))
-                continue
-            el = page.locator("[data-kaigo-target]").first
-            el.scroll_into_view_if_needed()
-            if f.kind == "text":
-                el.fill(f.value)
-            elif f.kind == "select":
-                el.select_option(value=el.get_attribute("data-kaigo-option"))
+            elif f.kind == "radio":
+                err = _check_radio(page, f)
             else:
-                el.check(force=True)
-                if not el.is_checked():
-                    failures.append((f, "チェックを入れられませんでした"))
+                err = _fill_one(page, f)
         except Exception as e:
-            failures.append((f, f"入力エラー: {e}"))
-    return failures
+            err = f"入力エラー: {e}"
+        if err:
+            failures[id(f)] = (f, err)
+
+    # 最終確認: ラジオボタンが外れていたら入れ直す
+    for f in radios:
+        try:
+            err = _check_radio(page, f)
+        except Exception as e:
+            err = f"入力エラー: {e}"
+        if err:
+            failures[id(f)] = (f, err)
+        else:
+            failures.pop(id(f), None)
+    return [failures[id(f)] for f in fields if id(f) in failures]
+
+
+def _fill_one(page, f: Field) -> str | None:
+    status = page.evaluate(_MARK_JS, [f.label, f.kind, f.value])
+    if status != "ok":
+        return _reason(status)
+    el = page.locator("[data-kaigo-target]").first
+    if f.kind == "text":
+        el.fill(f.value)
+    else:
+        el.select_option(value=el.get_attribute("data-kaigo-option"))
+    return None
+
+
+def _check_radio(page, f: Field) -> str | None:
+    status = page.evaluate(_MARK_JS, [f.label, f.kind, f.value])
+    if status != "ok":
+        return _reason(status)
+    el = page.locator("[data-kaigo-target]").first
+    if el.is_checked():
+        return None
+    label = page.locator("[data-kaigo-click]").first
+    for attempt in (
+        lambda: label.click(timeout=3000),
+        lambda: el.check(force=True, timeout=3000),
+        lambda: el.evaluate("e => e.click()"),
+    ):
+        try:
+            attempt()
+        except Exception:
+            pass
+        if el.is_checked():
+            return None
+    return "チェックを入れられませんでした"
 
 
 def _reason(status: str) -> str:
@@ -208,9 +264,5 @@ def _upload(page, f: Field) -> str | None:
 
 
 def _settle(page) -> None:
-    """アップロード処理の完了を少し待つ。"""
-    try:
-        page.wait_for_load_state("networkidle", timeout=10_000)
-    except Exception:
-        pass
-    page.wait_for_timeout(1000)
+    """添付ファイルの読み込みを少し待つ。"""
+    page.wait_for_timeout(700)
