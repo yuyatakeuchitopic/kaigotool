@@ -49,9 +49,6 @@ def download_magokoro_receipt(
         if "application/pdf" in (r.headers.get("content-type") or ""):
             pdf_responses.append(r)
 
-    def got_file():
-        return downloads or pdf_responses or _pdf_popup(popups)
-
     page.on("download", on_download)
     page.on("dialog", lambda d: d.accept())  # JavaScript の確認ダイアログは OK
     context.on("page", on_page)
@@ -65,10 +62,24 @@ def download_magokoro_receipt(
             page, buttons(page, ["領収書・納品書を発行する"]), timeout_ms, "「領収書・納品書を発行する」ボタン"
         ).click()
 
-        if not _wait(page, got_file, timeout_ms):
-            raise RuntimeError("領収書・納品書ファイルのダウンロードを検出できませんでした")
+        # プレビュー画面（同じタブまたは新しいウィンドウ）の「発 行」ボタンを押すと本物の PDF が届く。
+        # プレビュー表示中に届くもの（プレビュー用の画像・PDF）は使わない
+        issue_btn = _find_issue_button(page, popups, timeout_ms)
+        downloads.clear()
+        pdf_responses.clear()
+        known_popups = len(popups)
+        issue_btn.click()
 
-        _save_file(context, downloads, pdf_responses, popups, dest)
+        def got_issued_file():
+            return downloads or pdf_responses or _pdf_popup(popups[known_popups:])
+
+        if not _wait(page, got_issued_file, timeout_ms):
+            raise RuntimeError("「発行」を押した後のファイルのダウンロードを検出できませんでした")
+
+        _save_file(context, downloads, pdf_responses, popups[known_popups:], dest)
+        if not dest.read_bytes()[:5] == b"%PDF-":
+            dest.unlink()
+            raise RuntimeError("ダウンロードしたファイルが PDF ではありませんでした")
     except Exception:
         page.screenshot(path=str(dest.with_suffix(".error.png")), full_page=True)
         raise
@@ -90,10 +101,31 @@ def _save_file(context, downloads, pdf_responses, popups, dest: Path) -> None:
             return
         except Exception:
             pass
-    popup = _pdf_popup(popups) or (popups[-1] if popups else None)
+    popup = _pdf_popup(popups)
     if popup is None:
         raise RuntimeError("領収書・納品書ファイルを取得できませんでした")
     dest.write_bytes(context.request.get(popup.url).body())
+
+
+ISSUE_BUTTON_NAME = re.compile(r"^\s*発\s*行\s*$")  # 画面上は「発 行」
+
+
+def _find_issue_button(page: Page, popups: list[Page], timeout_ms: int) -> Locator:
+    """プレビュー画面の「発 行」ボタン。新しいウィンドウで開く場合もあるので全ページを探す。"""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while time.monotonic() < deadline:
+        for p in [*reversed(popups), page]:
+            if p.is_closed():
+                continue
+            for loc in (p.get_by_role("button", name=ISSUE_BUTTON_NAME),
+                        p.get_by_role("link", name=ISSUE_BUTTON_NAME)):
+                for i in range(loc.count()):
+                    el = loc.nth(i)
+                    if el.is_visible() and el.is_enabled():
+                        p.bring_to_front()
+                        return el
+        page.wait_for_timeout(250)
+    raise RuntimeError("プレビュー画面の「発行」ボタンが見つかりません")
 
 
 def _order_inputs(page: Page) -> list[Locator]:

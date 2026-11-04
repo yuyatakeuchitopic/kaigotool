@@ -20,12 +20,12 @@ from kaigo.vendors import VENDORS  # noqa: E402
 LAUNCH = {"executable_path": os.environ["PW_CHROMIUM_EXECUTABLE"]} if os.environ.get("PW_CHROMIUM_EXECUTABLE") else {}
 
 
-def _make_pdf() -> bytes:
-    """「発行日」「総合計」を含む PDF を作る（まごころ納品書の代わり）。"""
+def _make_pdf(html: str = "<p>発行日: 2026-09-01</p><p>総合計 ￥8,426</p>") -> bytes:
+    """PDF を作る（既定は「発行日」「総合計」を含む、まごころ納品書の代わり）。"""
     with sync_playwright() as p:
         b = p.chromium.launch(**LAUNCH)
         page = b.new_page()
-        page.set_content("<p>発行日: 2026-09-01</p><p>総合計 ￥8,426</p>")
+        page.set_content(html)
         data = page.pdf()
         b.close()
     return data
@@ -45,15 +45,21 @@ MAGOKORO_FORM = """<html><body><form action="/magokoro/login" method="get">
 <label><input type="checkbox">パスワードを表示</label>
 <input type="submit" value="ログイン"></form></body></html>"""
 
+# プレビュー画面: プレビュー用の PDF（本物ではない）を読み込む。「発 行」で本物の PDF が届く
+MAGOKORO_PREVIEW = """<html><body><p>宛名と但し書きを確認して発行ボタンを押してください。</p>
+<button type="button" onclick="window.open('/magokoro/file?order={order}')">発 行</button>
+<iframe src="/magokoro/preview.pdf" width="600" height="400"></iframe></body></html>"""
+
 MAGOKORO_MAIN = """<html><body><h2>発行したい書類を選択してください</h2>
 <div>領収書・納品書</div>
-<a href="#" onclick="window.open('/magokoro/file?order={order}'); return false;">領収書・納品書を発行する</a>
+<a href="#" onclick="window.open('/magokoro/preview?order={order}'); return false;">領収書・納品書を発行する</a>
 </body></html>"""
 
 
 @pytest.fixture(scope="module")
 def site():
     pdf = _make_pdf()
+    preview_pdf = _make_pdf("<p>プレビュー</p>")
     seen = {}
 
     class H(BaseHTTPRequestHandler):
@@ -78,6 +84,10 @@ def site():
             elif u.path == "/magokoro/login":
                 seen["order"], seen["tel"] = q.get("order_no"), q.get("tel_pw")
                 self._send(MAGOKORO_MAIN.format(order=q.get("order_no")).encode(), "text/html; charset=utf-8")
+            elif u.path == "/magokoro/preview":
+                self._send(MAGOKORO_PREVIEW.format(order=q.get("order")).encode(), "text/html; charset=utf-8")
+            elif u.path == "/magokoro/preview.pdf":
+                self._send(preview_pdf, "application/pdf")
             elif u.path == "/magokoro/file":
                 self._send(pdf, "application/pdf", {"Content-Disposition": 'attachment; filename="d.pdf"'})
             else:
