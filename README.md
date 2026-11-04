@@ -32,6 +32,14 @@ cd "C:\アプリケーション\kaigotool-claude-kaigo-insurance-automation-h38m
 .venv\Scripts\python.exe app.py
 ```
 
+### 最新版への更新
+
+フォルダ内の **`update.bat` をダブルクリック**すると、GitHub から最新版を取得してこのフォルダに上書きします
+（設定・ログイン状態・`.venv` はそのまま）。更新後は画面のタイトルの「版」が新しい日付になっていることを確認してください。
+
+zip を手動で展開する場合は、zip の中の `kaigotool-claude-kaigo-insurance-automation-h38m9n` フォルダの**中身**を
+ツールのフォルダに上書きしてください（そのまま展開すると同じ名前のフォルダが一段深くでき、古い版が動き続けます）。
+
 ### 設定の保存
 
 申請者情報・Gmail・領収書フォルダなどは画面で入力し、「**設定を保存（次回の既定値にする）**」を押すと

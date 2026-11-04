@@ -11,7 +11,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
 
-from . import attachments
+from . import __version__, attachments
 from .form import SLOT_MARKS, Field, Slot, build_fields
 from .inputs import YM_RE, month_choices, parse_amount, parse_date
 from .receipts import find_receipts
@@ -44,7 +44,7 @@ class App:
         self.s = load_settings(settings_file, legacy_toml)
         self.q: queue.Queue = queue.Queue()
         self.busy = False
-        root.title("介護費用申請ツール")
+        root.title(f"介護費用申請ツール（版 {__version__}）")
         root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build()
         self._apply_mode()
@@ -451,7 +451,7 @@ class App:
         self.busy = True
         for b in (self.run1_btn, self.run2_btn):
             b.configure(state="disabled")
-        self._log(f"\n===== {title} 開始 =====\n")
+        self._log(f"\n===== {title} 開始（版 {__version__}） =====\n")
         writer = _QueueWriter(self.q)
 
         def worker():
