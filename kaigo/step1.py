@@ -84,8 +84,12 @@ def process(
     browser_factory,
     overwrite: bool = False,
     magokoro_phone: str = "",
+    ask_reason=None,
 ) -> list[Result]:
-    """メールごとに領収書を保存する。browser_factory(headless) は BrowserContext を返す。"""
+    """メールごとに領収書を保存する。browser_factory(headless) は BrowserContext を返す。
+
+    ask_reason: まごころが発行済み（再発行が必要）のとき、再申請理由を聞く関数。
+    """
     from .web import download_magokoro_receipt, save_homecare_receipt
 
     results: list[Result] = []
@@ -116,7 +120,10 @@ def process(
                         raise RuntimeError(f"注文番号({order_no}) または 納品書URL({url}) が見つかりません")
                     if not magokoro_phone:
                         raise RuntimeError("まごころ用の電話番号が未入力です（Step1 画面で入力してください）")
-                    download_magokoro_receipt(browser_factory(None), url, order_no, magokoro_phone, dest)
+                    # 再発行の「確認」はユーザーが押すため、まごころは画面を表示して操作する
+                    download_magokoro_receipt(
+                        browser_factory(False), url, order_no, magokoro_phone, dest, ask_reason=ask_reason
+                    )
                     info = parse_magokoro(pdf_text(dest))
                     warn_if_not_receipt(key, dest, info)
                 r.receipt_date, r.amount = info.date, info.amount
@@ -204,7 +211,7 @@ def print_summary(results: list[Result]) -> None:
     print(f"合計: {total:,}円")
 
 
-def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False, show_browser: bool = False) -> int:
+def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False, ask_reason=None) -> int:
     month_range(ym)  # 形式チェック
     folder = Path(cfg.receipt_root) / ym
     if folder.is_dir():
@@ -220,7 +227,7 @@ def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False,
             return 1
         print("Gmail を検索しています...")
         mails = fetch_mails(cfg, ym, need_mail)
-        results += _download(cfg, folder, ym, mails, overwrite, show_browser)
+        results += _download(cfg, folder, ym, mails, overwrite, ask_reason)
 
     summary = write_summary(folder, ym, results)
     print_summary(results)
@@ -228,17 +235,16 @@ def run(cfg: Settings, ym: str, vendor_keys: list[str], overwrite: bool = False,
     return 1 if any(r.status == "error" for r in results) else 0
 
 
-def _download(cfg: Settings, folder: Path, ym: str, mails, overwrite: bool, show_browser: bool) -> list[Result]:
+def _download(cfg: Settings, folder: Path, ym: str, mails, overwrite: bool, ask_reason) -> list[Result]:
     from playwright.sync_api import sync_playwright
 
     with ExitStack() as stack:
         pw = None
         contexts: dict[bool, object] = {}
 
-        def browser_factory(headless: bool | None):
-            # PDF 印刷はヘッドレス必須。None はダウンロード用で、show_browser 時のみ画面表示
+        def browser_factory(headless: bool):
+            # ホームケアの PDF 印刷はヘッドレス必須。まごころは画面表示
             nonlocal pw
-            headless = (not show_browser) if headless is None else headless
             if headless not in contexts:
                 if pw is None:
                     pw = stack.enter_context(sync_playwright())
@@ -247,4 +253,5 @@ def _download(cfg: Settings, folder: Path, ym: str, mails, overwrite: bool, show
                 contexts[headless] = browser.new_context(accept_downloads=True, locale="ja-JP")
             return contexts[headless]
 
-        return process(folder, ym, mails, browser_factory, overwrite=overwrite, magokoro_phone=cfg.magokoro_phone)
+        return process(folder, ym, mails, browser_factory, overwrite=overwrite,
+                       magokoro_phone=cfg.magokoro_phone, ask_reason=ask_reason)

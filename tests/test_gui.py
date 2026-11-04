@@ -145,3 +145,29 @@ def test_missing_attachments_are_reported(app, tmp_path):
     missing = app.missing_items()
     assert any("①領収書・明細書の添付" in m for m in missing)
     assert any("介護保険証の写しの添付" in m for m in missing)
+
+
+def test_reissue_reason_asked_from_worker_thread_and_remembered(app, tmp_path, monkeypatch):
+    import threading
+
+    import kaigo.gui as gui
+
+    asked = []
+
+    def fake_askstring(title, prompt, initialvalue="", parent=None):
+        asked.append((threading.current_thread() is threading.main_thread(), initialvalue))
+        return "介護補助金の申請に使用するため"
+
+    monkeypatch.setattr(gui.simpledialog, "askstring", fake_askstring)
+    result = {}
+    t = threading.Thread(target=lambda: result.setdefault("v", app.ask_reissue_reason()))
+    t.start()
+    for _ in range(100):
+        app.root.update()
+        if not t.is_alive():
+            break
+        app.root.after(20)
+    t.join(1)
+    assert result["v"] == "介護補助金の申請に使用するため"
+    assert asked == [(True, "")]  # 画面のスレッドで表示、初回は空欄
+    assert load_settings(tmp_path / "settings.json").magokoro_reissue_reason == "介護補助金の申請に使用するため"

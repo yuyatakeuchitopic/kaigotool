@@ -61,6 +61,7 @@ class Settings:
     gmail_address: str = ""
     gmail_app_password: str = ""
     magokoro_phone: str = ""  # まごころ納品書ページのログインに使う電話番号
+    magokoro_reissue_reason: str = ""  # まごころ再発行時の再申請理由（前回入力した内容）
     browser_channel: str = "msedge"
     apply_url: str = DEFAULT_APPLY_URL
     attachments_dir: str = DEFAULT_RECEIPT_ROOT + "\\毎回添付物"  # 介護保険証の写し等（毎回添付）

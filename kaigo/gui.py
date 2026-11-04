@@ -8,7 +8,7 @@ import threading
 import traceback
 from datetime import date
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 import tkinter as tk
 
 from . import __version__, attachments
@@ -116,11 +116,8 @@ class App:
         ttk.Entry(f, textvariable=self.magokoro_phone, width=20).grid(row=4, column=1, sticky="w")
 
         self.overwrite = tk.BooleanVar(value=False)
-        self.show_browser = tk.BooleanVar(value=False)
         ttk.Checkbutton(f, text="既存の領収書ファイルがあってもメールから取り直す", variable=self.overwrite).grid(
             row=5, column=1, sticky="w", pady=(8, 0))
-        ttk.Checkbutton(f, text="まごころの操作をブラウザに表示する（動作確認用）", variable=self.show_browser).grid(
-            row=6, column=1, sticky="w")
         ttk.Label(f, foreground="gray", justify="left", text=(
             "・対象年月のフォルダに命名規則どおりの領収書があれば、その業者は取得しません\n"
             "・まごころ: フォルダ内に他の名前の PDF があれば「領収書まごころ_YYYYMM.pdf」にリネームします\n"
@@ -400,12 +397,12 @@ class App:
             return messagebox.showwarning("入力エラー", "対象年月は YYYYMM 形式（例: 202610）で入力してください。")
         if not vendors:
             return messagebox.showwarning("入力エラー", "対象サイトを 1 つ以上選んでください。")
-        overwrite, show = self.overwrite.get(), self.show_browser.get()
+        overwrite = self.overwrite.get()
 
         def task():
             from .step1 import run
 
-            return run(s, ym, vendors, overwrite=overwrite, show_browser=show)
+            return run(s, ym, vendors, overwrite=overwrite, ask_reason=self.ask_reissue_reason)
 
         def done(_rc):
             # 取得した月を Step2 に引き継ぐ
@@ -444,6 +441,30 @@ class App:
         except Exception as e:
             return messagebox.showerror("Edge を起動できません", str(e))
         self._log("申請用の Edge を開きました。ログインして申込プランの画面を開き、②を押してください。\n")
+
+    def ask_reissue_reason(self) -> str | None:
+        """（処理中のスレッドから呼ぶ）まごころの再申請理由を画面で聞く。前回の理由を初期値にする。"""
+        box: dict = {}
+        answered = threading.Event()
+
+        def ui():
+            try:
+                box["v"] = simpledialog.askstring(
+                    "まごころサポート 再発行",
+                    "この領収書・納品書は発行済みのため、再発行（再申請）になります。\n"
+                    "納品書・領収書再申請理由を入力してください（申請サイトに転記します）。",
+                    initialvalue=self.s.magokoro_reissue_reason,
+                    parent=self.root,
+                )
+                if box["v"]:
+                    self.s.magokoro_reissue_reason = box["v"].strip()
+                    save_settings(self.s, self.settings_file)
+            finally:
+                answered.set()
+
+        self.q.put(ui)  # 画面の操作は画面のスレッドで行う
+        answered.wait()
+        return box.get("v")
 
     def _start(self, title: str, task, done=None) -> None:
         if self.busy:
