@@ -80,3 +80,10 @@ def test_run_reports_missing_gmail_only_when_needed(tmp_path, capsys):
     assert run(Settings(receipt_root=str(tmp_path)), "202610", ["magokoro"]) == 1
     assert "Gmail アドレスとアプリ パスワードを入力してください" in capsys.readouterr().out
     assert (tmp_path / "202610").is_dir()
+
+
+def test_warns_when_magokoro_file_is_not_a_receipt(tmp_path, capsys):
+    _touch(tmp_path / "領収書まごころ_202610.pdf")  # 発行日・金額を読めないファイル
+    prepare(tmp_path, "202610", ["magokoro"])
+    out = capsys.readouterr().out
+    assert "既にあるため終了" in out and "画面のキャプチャ等の可能性" in out

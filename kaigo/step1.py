@@ -118,6 +118,7 @@ def process(
                         raise RuntimeError("まごころ用の電話番号が未入力です（Step1 画面で入力してください）")
                     download_magokoro_receipt(browser_factory(None), url, order_no, magokoro_phone, dest)
                     info = parse_magokoro(pdf_text(dest))
+                    warn_if_not_receipt(key, dest, info)
                 r.receipt_date, r.amount = info.date, info.amount
                 if info.date is None or info.amount is None:
                     print("  ※ 日付/金額を読み取れませんでした（Step2 で手入力が必要）")
@@ -164,8 +165,16 @@ def prepare(folder: Path, ym: str, vendor_keys: list[str], overwrite: bool = Fal
     return results, need_mail
 
 
+def warn_if_not_receipt(key: str, path: Path, info: ReceiptInfo) -> None:
+    """まごころの領収書なら「発行日」「総合計」が読めるはず。読めなければ中身が違う可能性を知らせる。"""
+    if key == "magokoro" and info.date is None and info.amount is None:
+        print(f"  ▲ {path.name} から発行日・金額を読み取れません。領収書ではなく画面のキャプチャ等の可能性があります。"
+              "ファイルを開いて確認し、違っていれば削除してから再実行してください。")
+
+
 def _existing_result(key: str, path: Path, status: str) -> Result:
     info = _parse_existing(key, path)
+    warn_if_not_receipt(key, path, info)
     return Result(vendor=key, file=path.name, mail_date="", subject="", receipt_date=info.date,
                   amount=info.amount, status=status)
 

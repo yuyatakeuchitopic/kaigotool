@@ -55,20 +55,24 @@ def download_magokoro_receipt(
     context.on("response", on_response)
     try:
         page.goto(url, wait_until="domcontentloaded")
+        print(f"  納品書ページを開きました: {page.url}")
         find_visible(page, _order_inputs(page), timeout_ms, "注文番号の入力欄").fill(order_no)
         find_visible(page, _phone_inputs(page), timeout_ms, "電話番号の入力欄").fill(phone)
         find_visible(page, buttons(page, ["ログイン"]), timeout_ms, "「ログイン」ボタン").click()
+        print("  ログインしました")
         find_visible(
             page, buttons(page, ["領収書・納品書を発行する"]), timeout_ms, "「領収書・納品書を発行する」ボタン"
         ).click()
 
         # プレビュー画面（同じタブまたは新しいウィンドウ）の「発 行」ボタンを押すと本物の PDF が届く。
         # プレビュー表示中に届くもの（プレビュー用の画像・PDF）は使わない
+        print("  「領収書・納品書を発行する」を押しました")
         issue_btn = _find_issue_button(page, popups, timeout_ms)
         downloads.clear()
         pdf_responses.clear()
         known_popups = len(popups)
         issue_btn.click()
+        print(f"  プレビュー画面の「発行」を押しました: {issue_btn.page.url}")
 
         def got_issued_file():
             return downloads or pdf_responses or _pdf_popup(popups[known_popups:])
@@ -77,6 +81,7 @@ def download_magokoro_receipt(
             raise RuntimeError("「発行」を押した後のファイルのダウンロードを検出できませんでした")
 
         _save_file(context, downloads, pdf_responses, popups[known_popups:], dest)
+        print(f"  保存しました: {dest.name}（{dest.stat().st_size:,} バイト）")
         if not dest.read_bytes()[:5] == b"%PDF-":
             dest.unlink()
             raise RuntimeError("ダウンロードしたファイルが PDF ではありませんでした")
@@ -93,11 +98,13 @@ def download_magokoro_receipt(
 
 def _save_file(context, downloads, pdf_responses, popups, dest: Path) -> None:
     if downloads:
+        print(f"  ダウンロードを受信: {downloads[0].suggested_filename}（{downloads[0].url}）")
         downloads[0].save_as(dest)
         return
     for r in pdf_responses:  # PDF がタブ内に表示された場合
         try:
             dest.write_bytes(r.body())
+            print(f"  画面に表示された PDF を受信: {r.url}")
             return
         except Exception:
             pass
