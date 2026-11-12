@@ -1,5 +1,9 @@
 # kaigotool — 介護費用申請自動化
 
+> **v2（画面を見やすくした Python 不要の exe 版）は [`v2/`](v2/README_v2.md) にあります。**
+> ダウンロード: https://github.com/yuyatakeuchitopic/kaigotool/releases/latest/download/kaigotool-v2-windows.zip
+> 以下は v1（このフォルダ、Python 版）の説明です。
+
 1 つの画面で、タブを切り替えて使います。
 
 - **Step1 領収書取得**: Gmail から領収書を取得し `介護用品領収書\YYYYMM` に保存（ホームケア / まごころを選択可）
