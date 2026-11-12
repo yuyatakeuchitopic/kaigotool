@@ -88,6 +88,34 @@ def _apply_style(root) -> None:
     st.configure("TabHint.TLabel", background=BG, foreground=MUTED, font=_font(root, 9))
 
 
+class ScrollFrame(ttk.Frame):
+    """縦スクロールできる領域。中身は .body に置く（表示倍率が大きい PC でも全項目に届くように）。"""
+
+    def __init__(self, parent):
+        super().__init__(parent, style="Tab.TFrame")
+        self.canvas = tk.Canvas(self, background=BG, highlightthickness=0, borderwidth=0)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.body = ttk.Frame(self.canvas, style="Tab.TFrame", padding=12)
+        self._win = self.canvas.create_window((0, 0), window=self.body, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        self.body.bind("<Configure>", lambda _e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(self._win, width=e.width))
+        # マウスホイール（ポインタがこの領域にある間だけ）
+        self.bind("<Enter>", lambda _e: self._bind_wheel(True))
+        self.bind("<Leave>", lambda _e: self._bind_wheel(False))
+
+    def _bind_wheel(self, on: bool) -> None:
+        if on:
+            self.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+            self.bind_all("<Button-4>", lambda _e: self.canvas.yview_scroll(-1, "units"))
+            self.bind_all("<Button-5>", lambda _e: self.canvas.yview_scroll(1, "units"))
+        else:
+            for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                self.unbind_all(seq)
+
+
 class App:
     def __init__(self, root: tk.Tk, settings_file: Path | None = None, legacy_toml: Path | None = None):
         self.root = root
@@ -100,8 +128,7 @@ class App:
         self._build()
         self._apply_mode()
         root.after(100, self._drain)
-        root.minsize(1000, 700)
-        root.geometry("1180x880")
+        self._fit_window()
 
     # ------------------------------------------------------------------ 画面構築
     def _build(self) -> None:
@@ -121,7 +148,7 @@ class App:
         # ログは下端に固定（タブの中身が多くても潰れないよう先に配置）
         logf = ttk.LabelFrame(self.root, text="ログ", padding=6, style="Card.TLabelframe")
         logf.pack(side="bottom", fill="x", padx=12, pady=(0, 12))
-        self.log = tk.Text(logf, height=8, state="disabled", wrap="word", relief="flat",
+        self.log = tk.Text(logf, height=6, state="disabled", wrap="word", relief="flat",
                            background="#fbfbfc", foreground=TEXT, font=_font(self.root, 9),
                            highlightthickness=1, highlightbackground=BORDER)
         sb = ttk.Scrollbar(logf, command=self.log.yview)
@@ -131,15 +158,35 @@ class App:
 
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill="both", expand=True, padx=12, pady=(10, 6))
-        tab1, tab2, tab3 = (ttk.Frame(self.nb, padding=12, style="Tab.TFrame") for _ in range(3))
-        self.nb.add(tab1, text="  Step1  領収書を取得  ")
-        self.nb.add(tab2, text="  Step2  申請サイトに入力  ")
+        self.scrolls = [ScrollFrame(self.nb) for _ in range(2)]
+        tab3 = ttk.Frame(self.nb, style="Tab.TFrame")  # 設定: スクロール領域 + 常に見える保存ボタン
+        footer = ttk.Frame(tab3, style="Tab.TFrame", padding=(12, 6, 12, 8))
+        footer.pack(side="bottom", fill="x")
+        settings_scroll = ScrollFrame(tab3)
+        settings_scroll.pack(fill="both", expand=True)
+        self.scrolls.append(settings_scroll)
+        self.nb.add(self.scrolls[0], text="  Step1  領収書を取得  ")
+        self.nb.add(self.scrolls[1], text="  Step2  申請サイトに入力  ")
         self.nb.add(tab3, text="  設定  ")
         # 設定タブの変数を先に作る（Step1/Step2 から参照するため）
-        self._build_settings(tab3)
-        self._build_step1(tab1)
-        self._build_step2(tab2)
-        self.nb.select(tab2)
+        self._build_settings(settings_scroll.body, footer)
+        self._build_step1(self.scrolls[0].body)
+        self._build_step2(self.scrolls[1].body)
+        self.nb.select(self.scrolls[1])
+
+    def _fit_window(self) -> None:
+        """中身に合わせた大きさにする（画面より大きくなる分はタブ内をスクロール）。"""
+        self.root.update_idletasks()
+        body_h = max(sc.body.winfo_reqheight() for sc in self.scrolls)
+        body_w = max(sc.body.winfo_reqwidth() for sc in self.scrolls)
+        for sc in self.scrolls:
+            sc.canvas.configure(height=body_h, width=body_w)
+        self.root.update_idletasks()
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        w = min(self.root.winfo_reqwidth(), sw - 40)
+        h = min(self.root.winfo_reqheight(), sh - 80)  # タスクバー分を空ける
+        self.root.geometry(f"{w}x{h}+{max((sw - w) // 2, 0)}+10")
+        self.root.minsize(min(900, w), min(560, h))
 
     def _card(self, parent, title: str) -> ttk.LabelFrame:
         card = ttk.LabelFrame(parent, text=title, padding=(12, 8), style="Card.TLabelframe")
@@ -155,7 +202,7 @@ class App:
         ttk.Combobox(parent, textvariable=var, values=months, width=10).pack(side="left", padx=6)
         return var
 
-    def _build_settings(self, f: ttk.Frame) -> None:
+    def _build_settings(self, f: ttk.Frame, footer: ttk.Frame) -> None:
         # 申請者情報（2 列: 左 介護対象者 / 右 振込口座）
         appf = self._card(f, "申請者情報（Step2 で申請サイトに入力）")
         self.app_vars: dict[str, tk.StringVar] = {}
@@ -197,10 +244,10 @@ class App:
         ttk.Entry(uf, textvariable=self.url_var).grid(row=0, column=1, sticky="ew")
         uf.columnconfigure(1, weight=1)
 
-        bf = ttk.Frame(f, style="Tab.TFrame")
-        bf.pack(fill="x")
-        ttk.Button(bf, text="設定を保存（次回の既定値にする）", style="Accent.TButton", command=self.save).pack(side="left")
-        ttk.Label(bf, text="保存先はこの PC の中だけ（%LOCALAPPDATA%\\kaigotool）です", style="TabHint.TLabel").pack(
+        self.save_btn = ttk.Button(footer, text="設定を保存（次回の既定値にする）", style="Accent.TButton",
+                                   command=self.save)
+        self.save_btn.pack(side="left")
+        ttk.Label(footer, text="保存先はこの PC の中だけ（%LOCALAPPDATA%\\kaigotool）です", style="TabHint.TLabel").pack(
             side="left", padx=10)
 
     def _build_step1(self, f: ttk.Frame) -> None:

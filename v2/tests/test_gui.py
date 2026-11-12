@@ -171,3 +171,43 @@ def test_reissue_reason_asked_from_worker_thread_and_remembered(app, tmp_path, m
     assert result["v"] == "介護補助金の申請に使用するため"
     assert asked == [(True, "")]  # 画面のスレッドで表示、初回は空欄
     assert load_settings(tmp_path / "settings.json").magokoro_reissue_reason == "介護補助金の申請に使用するため"
+
+
+def _inside_window(w, root, area=None) -> bool:
+    """w が画面（または area の表示範囲）の中に全部見えているか。"""
+    root.update()
+    box = area or root
+    top, bottom = box.winfo_rooty(), box.winfo_rooty() + box.winfo_height()
+    return bool(w.winfo_viewable()) and top <= w.winfo_rooty() and w.winfo_rooty() + w.winfo_height() <= bottom
+
+
+def _check_layout(app):
+    root = app.root
+    root.update()
+    assert root.winfo_height() <= root.winfo_screenheight()
+    # 設定タブ: 保存ボタンは常に見える
+    app.nb.select(2)
+    assert _inside_window(app.save_btn, root)
+    # 各タブ: 一番下までスクロールすれば最後の部品が見える
+    for i, widget in ((0, app.run1_btn), (1, app.run2_btn)):
+        app.nb.select(i)
+        sc = app.scrolls[i]
+        sc.canvas.yview_moveto(1.0)
+        assert _inside_window(widget, root, sc.canvas), f"tab {i}: 最後のボタンに届かない"
+
+
+def test_layout_buttons_reachable(app):
+    _check_layout(app)
+
+
+def test_layout_reachable_at_150_percent_scaling(tmp_path):
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("表示環境がありません")
+    root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * 1.5)
+    try:
+        a = App(root, settings_file=tmp_path / "s.json")
+        _check_layout(a)
+    finally:
+        root.destroy()

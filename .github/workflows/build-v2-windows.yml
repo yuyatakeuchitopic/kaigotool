@@ -12,6 +12,11 @@ on:
 permissions:
   contents: write
 
+# 同時に走った古いビルドが「最新」にならないよう、1 つずつ順に実行する
+concurrency:
+  group: build-v2-windows
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
@@ -29,6 +34,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
+
+      - name: Stamp build number
+        shell: pwsh
+        run: Add-Content kaigo/__init__.py "`n__version__ = __version__[:-1] + ', build ${{ github.run_number }})'"
 
       - name: Build exe
         run: >
@@ -49,6 +58,18 @@ jobs:
           Copy-Item README_v2.md dist\kaigotool\README.md
           Copy-Item update_exe.bat dist\kaigotool\update.bat
           Compress-Archive -Path dist\kaigotool -DestinationPath kaigotool-v2-windows.zip -Force
+
+      - name: Test update.bat (downloads the current latest release into a copy)
+        shell: pwsh
+        run: |
+          $t = Join-Path $env:RUNNER_TEMP "upd test"
+          New-Item -ItemType Directory -Force $t | Out-Null
+          Copy-Item -Recurse dist\kaigotool (Join-Path $t "kaigotool")
+          Remove-Item (Join-Path $t "kaigotool\kaigotool.exe")
+          $p = Start-Process cmd -ArgumentList "/c", "update.bat < NUL" -WorkingDirectory (Join-Path $t "kaigotool") -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "update.bat failed: $($p.ExitCode)" }
+          if (-not (Test-Path (Join-Path $t "kaigotool\kaigotool.exe"))) { throw "update.bat did not restore kaigotool.exe" }
+          Write-Output "update.bat OK"
 
       - uses: actions/upload-artifact@v4
         with:

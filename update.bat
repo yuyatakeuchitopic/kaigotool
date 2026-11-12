@@ -21,7 +21,7 @@ if errorlevel 1 goto fail
 rem Do not overwrite this running script
 echo \update.bat> "%EXCL%"
 for /d %%D in ("%WORK%\*") do (
-    xcopy "%%D\*" "%~dp0" /E /Y /I /Q /EXCLUDE:%EXCL% > nul
+    xcopy "%%D\*" "%~dp0." /E /Y /I /Q /EXCLUDE:%EXCL% > nul
     if errorlevel 1 goto fail
 )
 

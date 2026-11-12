@@ -57,6 +57,30 @@ def _tk() -> str:
     return f"Tk {version}"
 
 
+def _gui() -> str:
+    """実際の画面を作り、使われた文字・大きさと、保存ボタンが見えるかを確認する。"""
+    import tkinter as tk
+
+    from . import gui
+
+    with tempfile.TemporaryDirectory() as d:
+        root = tk.Tk()
+        try:
+            app = gui.App(root, settings_file=Path(d) / "settings.json")
+            app.nb.select(2)
+            root.update()
+            bottom = app.save_btn.winfo_rooty() + app.save_btn.winfo_height()
+            visible = bool(app.save_btn.winfo_viewable()) and bottom <= root.winfo_rooty() + root.winfo_height()
+            info = (f"font={gui._font(root, 10)[0]} window={root.winfo_width()}x{root.winfo_height()} "
+                    f"screen={root.winfo_screenwidth()}x{root.winfo_screenheight()} "
+                    f"scaling={float(root.tk.call('tk', 'scaling')):.2f}")
+        finally:
+            root.destroy()
+    if not visible:
+        raise RuntimeError(f"設定の保存ボタンが画面に入っていません: {info}")
+    return info
+
+
 def run(out: Path, channel: str | None = "msedge") -> int:
     results: list[str] = []
     ok = True
@@ -71,6 +95,7 @@ def run(out: Path, channel: str | None = "msedge") -> int:
 
     check("import", _imports)
     check("tkinter", _tk)
+    check("gui", _gui)
 
     # 画面と同じく、別スレッドで print を横取りした状態で Edge を動かす
     captured = io.StringIO()

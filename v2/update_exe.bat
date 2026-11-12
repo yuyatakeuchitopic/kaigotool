@@ -28,7 +28,7 @@ if not exist "%WORK%\kaigotool\kaigotool.exe" goto fail
 
 rem Do not overwrite this running script
 echo \update.bat> "%EXCL%"
-xcopy "%WORK%\kaigotool\*" "%~dp0" /E /Y /I /Q /EXCLUDE:%EXCL% > nul
+xcopy "%WORK%\kaigotool\*" "%~dp0." /E /Y /I /Q /EXCLUDE:%EXCL% > nul
 if errorlevel 1 goto fail
 
 rmdir /s /q "%WORK%"
