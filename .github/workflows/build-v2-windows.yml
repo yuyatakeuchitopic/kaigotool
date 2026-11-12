@@ -1,0 +1,67 @@
+# v2 の Python 不要版（exe）を Windows で作り、動作確認してリリースに置く。
+name: build-v2-windows
+
+on:
+  push:
+    branches: [claude/kaigo-insurance-automation-h38m9n]
+    paths:
+      - "v2/**"
+      - ".github/workflows/build-v2-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build exe
+        run: >
+          pyinstaller --noconfirm --clean --windowed --name kaigotool
+          --collect-all playwright --collect-all pdfplumber --collect-all pdfminer --collect-all pypdfium2
+          app.py
+
+      - name: Self test (built exe, installed Edge)
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\kaigotool\kaigotool.exe" -ArgumentList "--selftest", "selftest.txt", "msedge" -Wait -PassThru
+          Get-Content selftest.txt -Encoding utf8
+          if ($p.ExitCode -ne 0) { throw "selftest failed: $($p.ExitCode)" }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Copy-Item README_v2.md dist\kaigotool\README.md -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist\kaigotool -DestinationPath kaigotool-v2-windows.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kaigotool-v2-windows
+          path: v2/kaigotool-v2-windows.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2-build-${{ github.run_number }}
+          name: kaigotool v2 (Windows, Python 不要) build ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: v2/kaigotool-v2-windows.zip
+          body: |
+            Python が無い PC でも動く版です。zip を展開し、kaigotool フォルダ内の kaigotool.exe を実行してください。
+            Microsoft Edge が必要です。
